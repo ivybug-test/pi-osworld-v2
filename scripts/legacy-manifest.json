@@ -6,7 +6,7 @@
   { "v1": "src/context/manager.ts", "v2": "src/context/manager.ts" },
   { "v1": "src/flows/types.ts", "v2": "src/flows/types.ts" },
   { "v1": "src/gate/finish-gate.ts", "v2": "src/gate/finish-gate.ts", "v2Only": true },
-  { "v1": "src/models/client.ts", "v2": "src/models/client.ts" },
+  { "v1": "src/models/client.ts", "v2": "src/models/client.ts", "v2Only": true },
   { "v1": "src/models/registry.ts", "v2": "src/models/registry.ts" },
   { "v1": "src/observation/router.ts", "v2": "src/observation/router.ts" },
   { "v1": "src/prompt/manager.ts", "v2": "src/prompt/manager.ts" },

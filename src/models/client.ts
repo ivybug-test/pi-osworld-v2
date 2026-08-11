@@ -10,6 +10,12 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from "@earendil-works/pi-ai";
+import {
+  createProvider,
+  envApiKeyAuth,
+  type MutableModels,
+} from "@earendil-works/pi-ai";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelSamplingConfig } from "../legacy-config/spec.js";
 import type { RunWriter } from "../telemetry/writer.js";
@@ -135,8 +141,48 @@ export function resolveModelForAlias(
   alias: string,
 ): ResolvedPiModel {
   const models = builtinModels();
+  registerQwenGateway(models);
   const ref = resolveModelRef(modelConfig, alias);
   return { models, model: resolveModel(models, ref.provider, ref.id), ref };
+}
+
+const QWEN_GATEWAY_PROVIDER = "qwen-gateway";
+const QWEN_GATEWAY_MODEL = "qwen3.7-plus";
+
+/** Register parametrix's OpenAI-compatible gateway as an ad-hoc pi provider. */
+function registerQwenGateway(models: MutableModels): void {
+  if (models.getModel(QWEN_GATEWAY_PROVIDER, QWEN_GATEWAY_MODEL)) return;
+  const baseUrl = process.env.OPENAI_BASE_URL;
+  if (!baseUrl) return;
+  models.setProvider(
+    createProvider({
+      id: QWEN_GATEWAY_PROVIDER,
+      name: "Qwen Gateway (Parametrix)",
+      baseUrl,
+      auth: { apiKey: envApiKeyAuth("Parametrix API key", ["OPENAI_API_KEY"]) },
+      models: [
+        {
+          id: QWEN_GATEWAY_MODEL,
+          name: "Qwen3.7 Plus",
+          api: "openai-completions",
+          provider: QWEN_GATEWAY_PROVIDER,
+          baseUrl,
+          reasoning: true,
+          input: ["text", "image"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 1000000,
+          maxTokens: 65536,
+          compat: {
+            thinkingFormat: "qwen",
+            supportsDeveloperRole: false,
+            supportsStore: false,
+            supportsReasoningEffort: false,
+          },
+        },
+      ],
+      api: openAICompletionsApi(),
+    }),
+  );
 }
 
 export function serializeMessage(

@@ -88,6 +88,11 @@ def config(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser.add_argument("--sleep-after-execution", type=float, default=3.0)
     parser.add_argument("--test-config-base-dir", default="evaluation_examples")
     parser.add_argument("--eval-version", default="v2", choices=["v1", "v2", "windows"])
+    parser.add_argument("--checkpoint-eval-mode", default=None, choices=["off", "inline"])
+    parser.add_argument("--checkpoint-steps", default=None, help="Comma-separated step numbers")
+    parser.add_argument("--trace-guest", action="store_true", default=None)
+    parser.add_argument("--guest-trace-top-n", type=int, default=None)
+    parser.add_argument("--guest-trace-timeout", type=int, default=None)
     add_logging_args(parser)
     return parser.parse_args(list(argv) if argv is not None else None)
 
@@ -101,6 +106,31 @@ def build_run_args(
     max_steps = args.max_steps or int(termination.get("max_steps", 100))
     num_envs = max(1, args.num_envs or int(runtime.get("num_envs", 1)))
     result_model = args.result_model or experiment.get("experiment", "v2")
+    checkpoint_eval_mode = args.checkpoint_eval_mode or termination.get("checkpoint_eval_mode", "off")
+    raw_checkpoint_steps = (
+        args.checkpoint_steps
+        if args.checkpoint_steps is not None
+        else termination.get("checkpoint_steps", [])
+    )
+    if isinstance(raw_checkpoint_steps, list):
+        checkpoint_steps = ",".join(str(int(step)) for step in raw_checkpoint_steps)
+    else:
+        checkpoint_steps = str(raw_checkpoint_steps or "").strip()
+    trace_guest = (
+        args.trace_guest
+        if args.trace_guest is not None
+        else bool(runtime.get("trace_guest", False))
+    )
+    guest_trace_top_n = (
+        args.guest_trace_top_n
+        if args.guest_trace_top_n is not None
+        else int(runtime.get("guest_trace_top_n", 30))
+    )
+    guest_trace_timeout = (
+        args.guest_trace_timeout
+        if args.guest_trace_timeout is not None
+        else int(runtime.get("guest_trace_timeout", 15))
+    )
     return SimpleNamespace(
         result_dir=os.path.abspath(args.result_dir),
         config_path=os.path.abspath(args.config),
@@ -126,6 +156,11 @@ def build_run_args(
         num_envs=num_envs,
         require_a11y_tree=bool(observation_capture.get("require_a11y_tree", False)),
         require_terminal=bool(observation_capture.get("require_terminal", False)),
+        trace_guest=trace_guest,
+        guest_trace_top_n=guest_trace_top_n,
+        guest_trace_timeout=guest_trace_timeout,
+        checkpoint_eval_mode=checkpoint_eval_mode,
+        checkpoint_steps=checkpoint_steps,
         test_config_base_dir=args.test_config_base_dir,
         eval_version=args.eval_version,
         log_level=args.log_level,

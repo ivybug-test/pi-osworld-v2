@@ -1,0 +1,166 @@
+# stateact-minimal 拓扑，集群模型走 parametrix qwen3.7-plus（OpenAI 兼容网关）。
+experiment: stateact-qwen
+
+benchmark:
+  name: osworld-v2
+  release: osworld-v2-2026.06.24
+
+task_set: task-sets/smoke.yaml
+
+observation_capture:
+  require_a11y_tree: true
+  require_terminal: true
+
+context:
+  engine: pi-session
+  context_window: 200000
+  compaction:
+    strategy: m3-image-truncation
+    image_truncation:
+      screenshot_turns: 10
+      chunk_size: 20
+      placeholder: "Tool result: Success"
+
+trace:
+  llm_requests: true
+  include_images: false
+
+llm_retry:
+  max_retries: 2
+  max_retry_delay_ms: 60000
+
+models:
+  main: qwen-gateway/qwen3.7-plus
+  gui: qwen-gateway/qwen3.7-plus
+  finish_gate: qwen-gateway/qwen3.7-plus
+
+runtime:
+  num_envs: 1
+
+roles:
+  main:
+    backend: pi
+    model: main
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/main-state-only.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [state, user_response]
+      deny: [screenshot, accessibility_tree]
+    context:
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
+    tools: [state.inspect, plan.update, delegate.gui, finish.request, fail.request]
+    receives: [task, task_state]
+    message_style: state_text
+    interior_loop: true
+    terminal_tools: [delegate.gui, finish, fail, ask_user]
+    plan_tool: plan.update
+    refresh_state: true
+    budget: { max_steps: 200 }
+
+  gui:
+    backend: pi
+    model: gui
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/gui-specialist.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [screenshot, accessibility_tree]
+    context:
+      fresh_per_round: true
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
+    tools: [computer.pyautogui, state.view_image, delegation.complete]
+    receives: [task, contract]
+    interior_loop: true
+    terminal_tools: [delegation.complete]
+
+  finish_gate:
+    backend: pi
+    model: finish_gate
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/finish-gate.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [state, terminal]
+    context:
+      fresh_per_round: true
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
+    tools: [state.inspect_ro, finish_gate.verdict]
+    permissions:
+      mode: read_only
+      tools:
+        state.python: readonly
+        state.bash: deny
+        state.write_file: deny
+        state.edit_file: deny
+    receives: [task, contract, executor_report]
+    message_style: gate
+    interior_loop: true
+    terminal_tools: [finish_gate.verdict]
+    read_only: enforce
+    budget: { max_steps: 50 }
+
+delegations:
+  - id: gui
+    from_role: main
+    tool: delegate.gui
+    to_role: gui
+    terminal_tool: delegation.complete
+    fresh_context: true
+    max_turns: 50
+
+gates:
+  finish:
+    role: finish_gate
+    verdict_tool: finish_gate.verdict
+    fresh_context: true
+
+loop:
+  driver: gate_verdict
+  gate: finish
+  feedback_to: main
+  max_rounds: 3
+  total_rounds: 500
+  min_steps_before_finish: 3
+  on_gate_exhausted: blocked
+
+termination:
+  max_steps: 500
+  checkpoint_eval_mode: inline
+  checkpoint_steps: [150, 300]
