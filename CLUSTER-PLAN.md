@@ -48,7 +48,12 @@ Aliyun/OSS/续跑/重启，改动面大，且把两套职责（本地实验 + �
       结论：暂不能零代码走 `anthropic/qwen3.7-plus`，需要二选一：
       (a) 请网关提供方让 qwen 在 Anthropic Messages 端点可用；
       (b) 给 v2 `src/models/client.ts` 增加 generic OpenAI 兼容 provider
-      （base URL + chat/completions 请求/响应翻译）。
+      （base URL + chat/completions）。实测确认 pi-ai 已内置
+      `openai-completions` API 和 `createProvider`（如 zai/opencode 等 provider
+      都走这条路），所以 v2 不需要手写协议翻译，只需注册一个 qwen provider：
+      base URL 用 `OPENAI_BASE_URL`、key 用 `OPENAI_API_KEY`、模型走
+      `openai-completions`，YAML 里写 `models.main: qwen/qwen3.7-plus`。
+      MiniMax 的 anthropic 路径保持不变，两者可共存。
 - [ ] 修复 `.env` 网关域名（session 中发现 `omni-gateway-sg.parametri.cn`
       已 NXDOMAIN，当前可用的是 `parametrix.cn/v1`），并确认 qwen 实验的
       `OPENAI_BASE_URL` / key。
@@ -114,7 +119,9 @@ Aliyun/OSS/续跑/重启，改动面大，且把两套职责（本地实验 + �
 
 ## 决策点
 
-1. 模型接入：Anthropic 兼容网关 vs 新增 OpenAI 兼容 provider。
+1. 模型接入：推荐走 parametrix 的 OpenAI chat/completions（与
+   `launch_qwen_4.sh` 一致），在 v2 注册 qwen provider；仅当网关后续
+   提供可用的 `/v1/messages` 时才考虑零代码 Anthropic 路径。
 2. OSWorld-V2 部署：直接使用集群版本 vs vendor aliyun provider 进 v2。
 3. 结果目录：沿用集群布局 vs 保留 v2 `runs/<run_id>` 布局。
 4. 是否把集群 runner 的调度层抽成 v2 通用 `ClusterRunner`，后续再接其他云。
