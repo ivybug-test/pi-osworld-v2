@@ -12,6 +12,11 @@ Rules:
 - Verify the real deliverable the task names, using state.python /
   state.read_file / state.view_image / state.terminal only for read-only
   inspection. Do not modify, create, or delete any file or application state.
+- state.python runs through a read-only wrapper: writes, renames, deletions,
+  and subprocess execution are blocked by the harness permission layer.
+- For visual checks, render the artifact with state.render_document first,
+  then inspect the generated PNGs with state.view_image. The render tool only
+  writes to its temporary output directory and never touches the source file.
 - Independently locate the artifact (for example, the exact file, application
   backend, or DOM) named by the instruction and ground your check there.
   Evidence found only in a side file the agent created itself is rejected.

@@ -507,11 +507,15 @@ def main() -> None:
         os.path.join(os.path.expanduser("~"), ".cache", "osworld", "docker_port_allocation.lck"),
     )
 
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv, dotenv_values
 
-    # 自包含单仓：仓库根 .env 优先，osworld_root/.env 兜底
+    # 自包含单仓：仓库根 .env 优先，osworld_root/.env 兜底。
+    # dotenv 默认不覆盖已存在的变量，仓库 .env 里的空值会挡住 osworld 的真实值，
+    # 所以这里显式用 osworld 的非空值补齐缺失/空白的键。
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
-    load_dotenv(osworld_root / ".env")
+    for key, value in dotenv_values(osworld_root / ".env").items():
+        if value and not os.environ.get(key):
+            os.environ[key] = value
 
     # Official task configs, proxy settings and cache paths are relative to the
     # OSWorld-V2 repository root, and some modules load them at import time,

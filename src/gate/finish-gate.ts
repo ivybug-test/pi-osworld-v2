@@ -183,5 +183,5 @@ function buildGateObservation(
 }
 
 function isWriteTool(name: string): boolean {
-  return ["state.write_file", "state.edit_file", "state.bash"].includes(name);
+  return ["state.write_file", "state.edit_file", "state.bash", "state.python"].includes(name);
 }

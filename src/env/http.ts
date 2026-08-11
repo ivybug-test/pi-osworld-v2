@@ -34,13 +34,20 @@ export class HttpEnvironment implements Environment {
     return new HttpToolExecutor(this.baseUrl).observe();
   }
 
-  async execute(call: ToolCallLike, opts?: { readOnly?: boolean }): Promise<ToolResult> {
-    if (opts?.readOnly && this.writeTools.has(call.name)) {
+  async execute(
+    call: ToolCallLike,
+    opts?: { readOnly?: boolean; readonlyPython?: boolean },
+  ): Promise<ToolResult> {
+    const effectiveCall =
+      opts?.readonlyPython && call.name === "state.python"
+        ? { ...call, name: "state.inspect_python" }
+        : call;
+    if (opts?.readOnly && this.writeTools.has(effectiveCall.name)) {
       return {
-        text: `${call.name} is disabled for the read-only role (environment layer)`,
+        text: `${effectiveCall.name} is disabled for the read-only role (environment layer)`,
         isError: true,
       };
     }
-    return new HttpToolExecutor(this.baseUrl).execute(call);
+    return new HttpToolExecutor(this.baseUrl).execute(effectiveCall);
   }
 }

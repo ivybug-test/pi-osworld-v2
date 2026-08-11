@@ -30,6 +30,7 @@ export function createTaskState(
       : [],
     artifacts: schema.includes("artifacts") ? [] : [],
     facts: schema.includes("facts") ? [] : [],
+    gate: { rejections: 0 },
     rounds: [],
   };
 }

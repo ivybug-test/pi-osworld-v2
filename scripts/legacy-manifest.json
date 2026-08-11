@@ -5,7 +5,7 @@
   { "v1": "src/context/image-truncation.ts", "v2": "src/context/image-truncation.ts" },
   { "v1": "src/context/manager.ts", "v2": "src/context/manager.ts" },
   { "v1": "src/flows/types.ts", "v2": "src/flows/types.ts" },
-  { "v1": "src/gate/finish-gate.ts", "v2": "src/gate/finish-gate.ts" },
+  { "v1": "src/gate/finish-gate.ts", "v2": "src/gate/finish-gate.ts", "v2Only": true },
   { "v1": "src/models/client.ts", "v2": "src/models/client.ts" },
   { "v1": "src/models/registry.ts", "v2": "src/models/registry.ts" },
   { "v1": "src/observation/router.ts", "v2": "src/observation/router.ts" },
@@ -17,8 +17,8 @@
   { "v1": "src/tools/computer.ts", "v2": "src/tools/computer.ts" },
   { "v1": "src/tools/executor.ts", "v2": "src/tools/executor.ts" },
   { "v1": "src/tools/plan.ts", "v2": "src/tools/plan.ts" },
-  { "v1": "src/tools/registry.ts", "v2": "src/tools/registry.ts" },
-  { "v1": "src/tools/state.ts", "v2": "src/tools/state.ts" },
-  { "v1": "python/pi_osworld_adapter.py", "v2": "python/pi_osworld_adapter.py" },
+  { "v1": "src/tools/registry.ts", "v2": "src/tools/registry.ts", "v2Only": true },
+  { "v1": "src/tools/state.ts", "v2": "src/tools/state.ts", "v2Only": true },
+  { "v1": "python/pi_osworld_adapter.py", "v2": "python/pi_osworld_adapter.py", "v2Only": true },
   { "v1": "python/pi_osworld_logging.py", "v2": "python/pi_osworld_logging.py" }
 ]

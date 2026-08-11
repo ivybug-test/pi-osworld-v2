@@ -56,6 +56,56 @@ def _detect_image_mime(raw: bytes) -> Optional[str]:
     return None
 
 
+_READONLY_PYTHON_PREFIX = r'''
+import os
+import sys
+
+_WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC
+_MUTATING_EVENTS = {
+    "os.write", "os.rename", "os.replace", "os.remove", "os.unlink",
+    "os.rmdir", "os.removedirs", "os.mkdir", "os.makedirs", "os.symlink",
+    "os.link", "os.chmod", "os.chown", "os.truncate", "os.ftruncate",
+    "os.popen", "os.system", "os.fork", "os.posix_spawn",
+    "os.spawnl", "os.spawnle", "os.spawnlp", "os.spawnlpe",
+    "os.spawnv", "os.spawnve", "os.spawnvp", "os.spawnvpe",
+    "subprocess.Popen",
+    "shutil.copyfile", "shutil.copy", "shutil.copy2", "shutil.move",
+    "shutil.rmtree", "shutil.make_archive", "shutil.unpack_archive",
+}
+
+
+def _pi_block_write(event, args):
+    if event == "open":
+        mode = args[1] if len(args) > 1 else None
+        flags = args[2] if len(args) > 2 else None
+        if isinstance(mode, str) and any(ch in mode for ch in "wa+x+"):
+            raise PermissionError("read-only python: file writes are disabled")
+        if isinstance(flags, int) and flags & _WRITE_FLAGS:
+            raise PermissionError("read-only python: file writes are disabled")
+        return
+    if event == "os.open":
+        flags = args[1] if len(args) > 1 else None
+        if isinstance(flags, int) and flags & _WRITE_FLAGS:
+            raise PermissionError("read-only python: file writes are disabled")
+        return
+    if event == "os.fdopen":
+        mode = args[1] if len(args) > 1 else None
+        if isinstance(mode, str) and any(ch in mode for ch in "wa+x+"):
+            raise PermissionError("read-only python: file writes are disabled")
+        return
+    if event == "os.write":
+        fd = args[0] if args else None
+        if fd in (1, 2):
+            return
+        raise PermissionError("read-only python: file writes are disabled")
+    if event in _MUTATING_EVENTS:
+        raise PermissionError("read-only python: mutation or subprocess is disabled")
+
+
+sys.addaudithook(_pi_block_write)
+'''
+
+
 class _ToolHttpHandler(BaseHTTPRequestHandler):
     """Serves VM tool calls from the Node bridge to the OSWorld controller."""
 
@@ -222,18 +272,36 @@ class PiOSWorldAgent:
                 timeout=int(args.get("timeout", 90)),
             )
             return self._normalize_tool_result(result)
+        if name == "state.inspect_python":
+            code = args.get("code")
+            if not code:
+                return {"ok": False, "error": "state.inspect_python requires 'code'", "output": ""}
+            result = controller.run_python_script(
+                _READONLY_PYTHON_PREFIX + "\n" + code,
+                timeout=int(args.get("timeout", 90)),
+            )
+            return self._normalize_tool_result(result)
         if name == "state.terminal":
             return {
                 "ok": True,
                 "output": controller.get_terminal_output() or "",
                 "error": "",
             }
+        if name == "state.list_dir":
+            path = args.get("path")
+            if not path:
+                return {"ok": False, "error": "state.list_dir requires 'path'", "output": ""}
+            result = controller.run_bash_script(
+                f"ls -la -- {self._shell_quote(str(path))}",
+                timeout=int(args.get("timeout", 30)),
+            )
+            return self._normalize_tool_result(result)
         if name == "state.read_file":
             path = args.get("path")
             if not path:
                 return {"ok": False, "error": "state.read_file requires 'path'", "output": ""}
             result = controller.run_bash_script(
-                f"cat -- {_shell_quote(str(path))}",
+                f"cat -- {self._shell_quote(str(path))}",
                 timeout=int(args.get("timeout", 30)),
             )
             return self._normalize_tool_result(result)
@@ -301,6 +369,29 @@ class PiOSWorldAgent:
                 "image_b64": _b64.b64encode(raw).decode("ascii"),
                 "image_mime": mime,
             }
+        if name == "state.render_document":
+            path = args.get("path")
+            if not path:
+                return {"ok": False, "error": "state.render_document requires 'path'", "output": ""}
+            output_dir = str(args.get("output_dir") or "/tmp/gate_render")
+            dpi = int(args.get("dpi", 60) or 60)
+            dpi = 60 if dpi < 10 or dpi > 300 else dpi
+            script = (
+                f"set -e\n"
+                f"rm -rf -- {self._shell_quote(output_dir)}\n"
+                f"mkdir -p -- {self._shell_quote(output_dir)}\n"
+                f"cp -- {self._shell_quote(str(path))} "
+                f"{self._shell_quote(output_dir)}/input.pptx\n"
+                f"cd {self._shell_quote(output_dir)}\n"
+                f"soffice --headless --convert-to pdf input.pptx >/dev/null 2>&1 || true\n"
+                f"pdftoppm -r {dpi} -png input.pdf slide\n"
+                f"ls -1 {self._shell_quote(output_dir)}/*.png\n"
+            )
+            result = controller.run_bash_script(
+                script,
+                timeout=int(args.get("timeout", 300)),
+            )
+            return self._normalize_tool_result(result)
         if name.startswith("computer."):
             return self._execute_computer_tool(name, args)
         return {"ok": False, "error": f"unknown VM tool: {name}", "output": ""}

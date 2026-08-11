@@ -37,6 +37,14 @@ export const stateTools: Tool[] = [
     }),
   },
   {
+    name: "state.list_dir",
+    description: "List a directory inside the OSWorld VM",
+    parameters: Type.Object({
+      path: Type.String({ description: "Absolute path inside the VM" }),
+      timeout: Type.Optional(Type.Number()),
+    }),
+  },
+  {
     name: "state.write_file",
     description: "Write a text file inside the OSWorld VM",
     parameters: Type.Object({
@@ -62,6 +70,23 @@ export const stateTools: Tool[] = [
       "Read an image file from the VM and return it to the model for inspection",
     parameters: Type.Object({
       path: Type.String({ description: "Absolute path to an image inside the VM" }),
+    }),
+  },
+  {
+    name: "state.render_document",
+    description:
+      "Render a document (pptx/odp/pdf) inside the VM to PNG pages in a temp dir and list the generated files",
+    parameters: Type.Object({
+      path: Type.String({ description: "Absolute path to the document inside the VM" }),
+      output_dir: Type.Optional(
+        Type.String({ description: "Optional output directory (defaults to a fresh temp dir)" }),
+      ),
+      dpi: Type.Optional(
+        Type.Number({ description: "Raster DPI for pdftoppm (default 60)" }),
+      ),
+      timeout: Type.Optional(
+        Type.Number({ description: "Timeout in seconds (default 300)" }),
+      ),
     }),
   },
   {

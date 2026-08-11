@@ -24,6 +24,7 @@ import {
   type ToolExecutionResult,
 } from "../legacy/imports.js";
 import { buildLegacyFlowContext } from "../legacy/context.js";
+import { policyForRole } from "../primitives/permission.js";
 
 // ---------------------------------------------------------------------------
 // Pi 后端：包装旧 RoleAgent + PiContextManager + RoleSubagent，不重写。
@@ -289,6 +290,15 @@ export class PiBackend implements BackendAdapter {
         }
         // 其他终结构造工具（如 finish_gate.verdict）
         if (this.isVerdictTool(req.role, call.name)) {
+          this.emit("finish_gate.verdict", {
+            episode_id: req.episodeId,
+            step: req.roundIndex,
+            role: req.role,
+            accepted: Boolean(call.arguments.accepted),
+            ...(typeof call.arguments.feedback === "string"
+              ? { feedback: call.arguments.feedback }
+              : {}),
+          });
           return {
             status: "done",
             report: assistantTextForArgs(call.arguments),
@@ -331,12 +341,16 @@ export class PiBackend implements BackendAdapter {
       return { text: formatPlan(session.plan), isError: false };
     }
 
-    if (role.read_only === "enforce" && isWriteTool(call.name)) {
+    const decision = policyForRole(role).check(call.name);
+    if (!decision.allow) {
       return {
-        text: `${call.name} is disabled for the read-only role`,
+        text: decision.reason ?? `${call.name} is disabled for the read-only role`,
         isError: true,
       };
     }
+    const effectiveCall = decision.readonly
+      ? { ...call, name: "state.inspect_python" }
+      : call;
 
     if (!this.context.toolExecutor) {
       return {
@@ -344,10 +358,10 @@ export class PiBackend implements BackendAdapter {
         isError: true,
       };
     }
-    const result = await this.context.toolExecutor.execute(call);
+    const result = await this.context.toolExecutor.execute(effectiveCall);
     if (
       role.refresh_state === true &&
-      isStateMutatingTool(call.name) &&
+      isStateMutatingTool(effectiveCall.name) &&
       this.context.toolExecutor.observe
     ) {
       const fresh = await this.context.toolExecutor.observe();

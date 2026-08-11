@@ -122,6 +122,13 @@ roles:
           placeholder: "Tool result: Success"
     memory: none
     tools: [state.inspect_ro, finish_gate.verdict]
+    permissions:
+      mode: read_only
+      tools:
+        state.python: readonly
+        state.bash: deny
+        state.write_file: deny
+        state.edit_file: deny
     receives: [task, contract, executor_report]
     message_style: gate
     interior_loop: true

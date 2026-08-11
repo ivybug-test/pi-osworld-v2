@@ -47,6 +47,8 @@ export interface TaskState {
   requirements: RequirementRecord[];
   artifacts: ArtifactRecord[];
   facts: FactRecord[];
+  /** gate_verdict 驱动跨 predict 持久化的拒绝计数与待注入 feedback。 */
+  gate?: { rejections: number; feedback?: string };
   rounds: RoundRecord[];
 }
 

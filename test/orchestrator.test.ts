@@ -225,6 +225,72 @@ describe("Orchestrator drivers", () => {
     expect(summary.outcome).toEqual({ kind: "blocked", reason: "finish gate exhausted" });
   });
 
+  it("gate_verdict: serve roundLimit=1 跨 predict 累计拒绝并恢复 feedback", async () => {
+    const spec = makeSpec({
+      roles: {
+        main: {
+          backend: "mock",
+          read_only: "none",
+          model: "main",
+          prompt: { system: "m.md" },
+          observation: { allow: ["state"] },
+          tools: ["state.bash"],
+          receives: ["task"],
+        },
+        finish_gate: {
+          backend: "mock",
+          model: "finish_gate",
+          prompt: { system: "g.md" },
+          observation: { allow: ["state"] },
+          tools: ["state.inspect_ro"],
+          receives: ["task", "contract", "executor_report"],
+          read_only: "enforce",
+        },
+      },
+      gates: { finish: { role: "finish_gate", verdict_tool: "finish_gate.verdict", fresh_context: true } },
+      loop: {
+        driver: "gate_verdict",
+        gate: "finish",
+        feedback_to: "main",
+        max_rounds: 2,
+        total_rounds: 10,
+        on_gate_exhausted: "blocked",
+      },
+      state: { schema: ["requirements"], store: "memory", update_policy: "self_report" },
+    });
+    const backend = new MockBackend({
+      behaviors: {
+        main: mockDone("finished"),
+        finish_gate: { type: "verdict", accepted: false, feedback: "artifact missing field X" },
+      },
+    });
+    const store = new MemoryTaskStateStore();
+    const dbg = new RecordingDebugger();
+    const runtime = new Runtime({
+      spec,
+      root: "/tmp",
+      backends: { main: backend, finish_gate: backend },
+      stateStore: store,
+      debugger: dbg,
+    });
+    const orch = new Orchestrator(spec, { runtime, debugger: dbg });
+
+    const s1 = await orch.runEpisode({ episodeId: "ep-1", task: "do the thing", roundLimit: 1 });
+    expect(s1.outcome.kind).toBe("execute");
+    const s2 = await orch.runEpisode({ episodeId: "ep-1", task: "do the thing", roundLimit: 1 });
+    expect(s2.outcome).toEqual({ kind: "blocked", reason: "finish gate exhausted" });
+    expect(s2.state.gate?.rejections).toBe(2);
+
+    // 第二轮 main 应收到上一 predict 持久化的 gate feedback
+    const secondMain = dbg.events.find(
+      (e) => e.type === "role.start" && e.role === "main" && e.round === 2,
+    );
+    expect(secondMain).toBeDefined();
+    if (secondMain?.type === "role.start") {
+      expect(secondMain.req.user).toContain("artifact missing field X");
+    }
+  });
+
   it("manager_decision: execute → executor → auditor clean → 第二轮 manager done", async () => {
     const spec = makeSpec({});
     const { summary, store } = await run(spec, {

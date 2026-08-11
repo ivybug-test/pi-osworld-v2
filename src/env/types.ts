@@ -23,10 +23,14 @@ export interface Environment {
   /** 拉取最新观察（截图/a11y/terminal）。 */
   observe(): Promise<ObservationEnvelope | undefined>;
   /**
-   * 执行工具调用。readOnly=true 时在环境层拒绝写工具（双闸之一；
-   * 执行层拦截在 PiBackend，这里是环境层兜底，也供非 pi 后端使用）。
+   * 执行工具调用。readOnly=true 时在环境层拒绝写工具（双闸之一）；
+   * readonlyPython=true 时把 state.python 映射到受限的 state.inspect_python。
+   * 执行层拦截在 PiBackend，这里是环境层兜底，也供非 pi 后端使用。
    */
-  execute(call: ToolCallLike, opts?: { readOnly?: boolean }): Promise<ToolResult>;
+  execute(
+    call: ToolCallLike,
+    opts?: { readOnly?: boolean; readonlyPython?: boolean },
+  ): Promise<ToolResult>;
 }
 
 export { type ObservationEnvelope };

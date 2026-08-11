@@ -17,12 +17,14 @@ const TOOL_GROUPS: Record<string, Tool[]> = {
   // state.inspect / state.code expand to the VM code-execution tool set.
   "state.inspect": stateTools,
   "state.code": stateTools,
-  // Read-only verifier set: no bash/write/edit, so the finish gate cannot
-  // mutate the deliverable it is supposed to verify.
+  // Read-only verifier set: no bash/write/edit. state.python is kept because
+  // the permission layer maps it to a guarded state.inspect_python at runtime.
   "state.inspect_ro": stateTools.filter(
     (tool) =>
       tool.name === "state.read_file" ||
+      tool.name === "state.list_dir" ||
       tool.name === "state.view_image" ||
+      tool.name === "state.render_document" ||
       tool.name === "state.terminal" ||
       tool.name === "state.python",
   ),

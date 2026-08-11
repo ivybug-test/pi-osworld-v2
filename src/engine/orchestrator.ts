@@ -49,10 +49,12 @@ export class Orchestrator {
     roundLimit?: number;
   }): Promise<EpisodeSummary> {
     const { runtime, debugger: dbg } = this.options;
-    this.feedback = undefined;
-    this.gateRejections = 0;
     const obs = input.observation ?? {};
     const existing = await runtime.readState(input.episodeId);
+    // serve 模式每个 predict 只跑一轮，feedback/拒绝计数持久化在 task_state，
+    // 这样 gate_verdict 的 max_rounds 和下一轮 feedback 能跨 predict 延续。
+    this.gateRejections = existing?.gate?.rejections ?? 0;
+    this.feedback = existing?.gate?.feedback;
     const state =
       existing ??
       createTaskState(
@@ -215,17 +217,29 @@ export class Orchestrator {
       ctx.state = updated;
       if (verdict.accepted) {
         this.feedback = undefined;
+        await runtime.writeState(ctx.episodeId, {
+          ...updated,
+          gate: { rejections: this.gateRejections },
+        });
         return { kind: "done" };
       }
       // 拒绝 → 记录反馈，下一轮 repair 时注入 main 的消息
       this.gateRejections += 1;
       if (this.gateRejections >= loop.max_rounds) {
         this.feedback = undefined;
+        await runtime.writeState(ctx.episodeId, {
+          ...updated,
+          gate: { rejections: this.gateRejections },
+        });
         return loop.on_gate_exhausted === "done"
           ? { kind: "done" }
           : { kind: "blocked", reason: "finish gate exhausted" };
       }
       this.feedback = verdict.feedback ?? "verifier rejected the finish claim";
+      await runtime.writeState(ctx.episodeId, {
+        ...updated,
+        gate: { rejections: this.gateRejections, feedback: this.feedback },
+      });
       return { kind: "execute" };
     }
 

@@ -14,6 +14,15 @@ export const BudgetSpec = z.object({
 });
 export type BudgetSpec = z.infer<typeof BudgetSpec>;
 
+export const PermissionAction = z.enum(["allow", "deny", "readonly"]);
+export type PermissionAction = z.infer<typeof PermissionAction>;
+
+export const PermissionSpec = z.object({
+  mode: z.enum(["full", "read_only"]).default("full"),
+  tools: z.record(PermissionAction).optional(),
+});
+export type PermissionSpec = z.infer<typeof PermissionSpec>;
+
 export const ObservationChannel = z.enum([
   "screenshot",
   "accessibility_tree",
@@ -112,6 +121,7 @@ export const RoleSpec = z.object({
   tools: z.array(z.string()),
   receives: z.array(ReceivesSource).optional(),
   read_only: z.enum(["enforce", "none"]).default("none"),
+  permissions: PermissionSpec.optional(),
   budget: BudgetSpec.optional(),
   /** 消息拼法：engine=v2 通用 receives 组装；raw_task=原文任务；state_text=stateact 式状态文本；gate=只读 gate 观察。 */
   message_style: z
