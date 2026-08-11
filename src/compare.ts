@@ -126,6 +126,39 @@ export function loadRunCompare(runDir: string): RunCompare {
   return entry;
 }
 
+/** 把输入路径展开成可比较的 run 目录：直接 run 目录原样返回；父目录自动枚举子 run。 */
+export function resolveRunDirs(inputs: string[]): string[] {
+  const out: string[] = [];
+  for (const input of inputs) {
+    const resolved = path.resolve(input);
+    if (isRunDir(resolved)) {
+      out.push(resolved);
+      continue;
+    }
+    let entries: import("node:fs").Dirent[] = [];
+    try {
+      entries = readdirSync(resolved, { withFileTypes: true });
+    } catch {
+      out.push(resolved); // 让调用方报错
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const full = path.join(resolved, entry.name);
+      if (isRunDir(full)) out.push(full);
+    }
+  }
+  return out;
+}
+
+function isRunDir(dir: string): boolean {
+  return (
+    existsSync(path.join(dir, "manifest.json")) ||
+    existsSync(path.join(dir, "runner.log")) ||
+    existsSync(path.join(dir, "summary", "results.json"))
+  );
+}
+
 export function formatCompare(runs: RunCompare[]): string {
   const headers = [
     "run",

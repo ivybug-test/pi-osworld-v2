@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { formatCompare, loadRunCompare } from "../src/compare.js";
+import {
+  formatCompare,
+  loadRunCompare,
+  resolveRunDirs,
+} from "../src/compare.js";
 
 function tmpDir(): string {
   return mkdtempSync(path.join(tmpdir(), "piosworld-v2-compare-"));
@@ -118,6 +122,19 @@ describe("compare", () => {
       expect(run.error).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("expands a parent run directory into child runs", () => {
+    const parent = tmpDir();
+    try {
+      write(parent, "a/manifest.json", JSON.stringify({ run_id: "a" }));
+      write(parent, "b/manifest.json", JSON.stringify({ run_id: "b" }));
+      write(parent, "not-a-run/README.txt", "x");
+      const runs = resolveRunDirs([parent]);
+      expect(runs.map((d) => path.basename(d)).sort()).toEqual(["a", "b"]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 

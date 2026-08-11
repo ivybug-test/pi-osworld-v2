@@ -1,4 +1,12 @@
-# 用法：node dist/cli.js matrix --matrix presets/matrix.example.yaml --dry-run
+# 用法：
+#   node dist/cli.js matrix --matrix presets/matrix.example.yaml --dry-run
+#   node dist/cli.js matrix --matrix presets/matrix.example.yaml \
+#     --config-root /home/binqiu/osworld-experiments \
+#     --result-dir /home/binqiu/osworld-experiments/runs-v2 \
+#     --osworld-root /home/binqiu/OSWorld-V2 \
+#     --python /home/binqiu/OSWorld-V2/.venv/bin/python
+# configs 相对当前工作目录（或 matrix 文件的 root 字段）；
+# task_sets 相对 --config-root。
 configs:
   - presets/m3-single.yaml
   - presets/stateact.yaml

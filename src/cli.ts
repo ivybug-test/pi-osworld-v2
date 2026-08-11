@@ -19,7 +19,11 @@ import {
 } from "./engine/taskState.js";
 import { runServe } from "./serve.js";
 import { formatReplay, loadEvents, summarizeRounds } from "./replay.js";
-import { formatCompare, loadRunCompare } from "./compare.js";
+import {
+  formatCompare,
+  loadRunCompare,
+  resolveRunDirs,
+} from "./compare.js";
 import {
   expandMatrix,
   formatMatrixPlan,
@@ -255,7 +259,7 @@ async function cmdCompare(runDirs: string[]): Promise<void> {
     usage();
     process.exit(1);
   }
-  const runs = runDirs.map((d) => loadRunCompare(path.resolve(d)));
+  const runs = resolveRunDirs(runDirs).map((d) => loadRunCompare(d));
   process.stdout.write(`${formatCompare(runs)}\n`);
   for (const run of runs) {
     if (run.error) {

@@ -123,7 +123,8 @@ export async function runMatrix(
       options.providerName,
     ];
     if (cell.taskSet) {
-      args.push("--task-set", path.resolve(root, cell.taskSet));
+      // run_v2.py 会把 task_set 按 --config-root 解析，这里保持相对路径原样传递
+      args.push("--task-set", cell.taskSet);
     }
     if (options.maxSteps !== undefined) {
       args.push("--max-steps", String(options.maxSteps));
