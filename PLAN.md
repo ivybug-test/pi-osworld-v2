@@ -77,12 +77,13 @@ git submodule 形式引用官方仓库，实验配置树（experiments / task-se
 
 ## Phase F — 集群适配（详细计划见 CLUSTER-PLAN.md）
 
-目标：基于同事已跑通的 `moreC/OSWorld-V2` `dev/zhilongli` 流程，让 v2 在
-Aliyun + OSS + parametrix 集群上跑实验。v2 只替换 agent 层，不复刻集群基建。
+目标：参考同事已跑通的集群流程，让 v2 在 Aliyun + OSS + parametrix 集群上跑实验。
+**不依赖同事仓库**：集群差异以 v2 自有模块 / 补丁维护，运行时只依赖官方
+OSWorld-V2 submodule + v2 自身代码。
 
 | # | 任务 | 验证 |
 |---|------|------|
-| F0 | 锁版拉取同事 fork；v2 注册 `qwen-gateway` OpenAI provider；CLI 补 aliyun/use_public_ip/vnc/recording | `npm test` 通过；本地 dry-run |
+| F0 | v2 自持 `python/cluster/oss_results.py` + `patches/osworld-cluster.patch`；注册 `qwen-gateway` OpenAI provider；CLI 补 aliyun/use_public_ip/vnc/recording | `npm test` 通过；setup.sh 应用补丁幂等；本地 dry-run |
 | F1 | `python/run_v2_cluster.py` 单任务集群冒烟（stateact + m3） | score 与本地同配置量级一致；产物完整 |
 | F2 | worker 并行 + `get_unfinished` 断点 + `mirror_task_dir` OSS | 4 env 跑 meta_001_004 对拍 |
 | F3 | matrix/compare 集群化，输出对比报告 | 2 配置 x 2 任务集跑通 |
