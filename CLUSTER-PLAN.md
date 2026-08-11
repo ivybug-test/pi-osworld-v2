@@ -1,127 +1,179 @@
-# pi-osworld-v2 集群实验改造计划
+# pi-osworld-v2 集群实验计划
 
-## 背景与目标
+> 2026-08-11 重设计：以同事已跑通的集群仓库为基线，v2 只替换 agent 层，不复刻
+> Aliyun / OSS / 断点续跑。参照仓库锁定：
+> `moreC/OSWorld-V2` branch `dev/zhilongli`
+> commit `e189bb845fcb9a1c7476a643c1729c06e4f66b24`（private repo）。
 
-后续需要在集群（当前参考 `47.120.53.174` 上的 Aliyun ECS 环境）批量跑 OSWorld-V2
-实验。目标不是复刻一套集群基建，而是让 **v2 harness 以最小改动跑进现有集群流程**，
-并且保留 v2 的配置驱动特性（实验差异全部在 YAML，而不是改 runner）。
+## 目标
 
-## 集群现状（2026-08-11 实测）
+- 在已有集群流程（主控机 `47.120.53.174`，Aliyun ECS + OSS + parametrix/qwen）上跑
+  v2 harness 实验（m3 / stateact / 后续 mea、对比矩阵），不再依赖 MiniMax Token Plan。
+- v2 的差异只体现在 `--config` YAML 与 prompts；runner 不因 harness 不同而改动。
+- 复用同事仓库已验证的集群基建：AliyunProvider、oss_results、task_loader、
+  lib_run_single、run_multienv 调度、镜像/TTL/SSH 纪律。
 
-- 启动脚本：`/home/zhilongli/launch_qwen_4.sh`，实际执行的是
-  `OSWorld-V2/scripts/python/run_multienv.py`：
-  `--provider_name aliyun --model qwen3.7-plus --action_space pyautogui
-  --observation_type screenshot --max_steps 500 --max_tokens 16384
-  --sleep_after_execution 3.0 --test_all_meta_path meta_001_004.json
-  --num_envs 4 --result_dir ./results_qwen`
-- 集群 runner 已有能力：
-  - Aliyun ECS 生命周期管理（`desktop_env/providers/aliyun/`，本机 OSWorld-V2 没有）
-  - 每个 worker 复用 VM，任务失败后 `_discard_env()` 废弃旧 VM、下个任务重新创建
-  - worker 进程死亡自动重启
-  - `get_unfinished()` 跳过已有 `result.txt` 的任务，支持断点续跑
-  - 结果布局 `result_dir/<action_space>/<observation_type>/<model>/<domain>/<task_id>`
-  - 每任务结束 `mirror_task_dir()` 镜像到 OSS；启动时写 `args.json`
-  - `shared_scores` 聚合，结束打印平均分
-- 远程 `.env` 已配置：
-  - `ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic`（MiniMax M3）
-  - `OPENAI_BASE_URL=https://omni-gateway-sg.parametrix.cn/v1`（qwen3.7-plus）
-- 远程已装 Node v22，但没有 pi-osworld / pi-osworld-v2 目录。
+## 参照仓库基线与文件清单
 
-## 推荐架构：复用集群 runner，替换 agent 为 v2 桥
+| 文件 | 作用 | v2 是否复用 |
+| --- | --- | --- |
+| `desktop_env/providers/aliyun/` | ECS 生命周期：创建/删除/私网 IP/TTL/镜像 revert | 直接 import |
+| `oss_results.py` | 截图直写 OSS + `mirror_task_dir` 小文件镜像 + 索引 | 直接 import |
+| `task_loader.py` | v2 任务 JSON / task_class 解析 | 直接 import |
+| `lib_run_single.py` | `run_single_example`：agent 循环、traj/result/checkpoint/multi-phase/memory tracer | 直接 import |
+| `scripts/python/run_multienv.py` | PromptAgent 集群调度：worker queue、VM 复用/废弃、get_unfinished、args.json | 作为 `run_v2_cluster.py` 骨架 |
+| `run_multienv_qwen_internal_agent.py` | QwenInternal XML tool-call runner（history_n / image folding） | 参考，v2 走 Pi provider 不直接复用 |
+| `docs/OSWORLD_V2_ALIYUN_RUNBOOK.md` | 主控机操作手册、.env 字段、并发授权、红线 | 沿用 |
+| `desktop_env/providers/aliyun/config.sh` | VM 镜像构建（noVNC / :5000 / wine / 国内源） | 沿用 |
 
-**方案 A（推荐）**：在 v2 里新增 `python/run_v2_cluster.py`，把集群
-`run_multienv.py` 的调度骨架搬过来，只把 `PromptAgent` 换成
-`PiOSWorldV2Agent`（JSONL bridge 到 v2 `serve`）。VM 复用、OSS、断点续跑、
-worker 重启、args.json 全部保留。v2 不 fork OSWorld-V2，集群专用代码集中在
-v2 的 `python/` 内，运行时 import 远端 OSWorld-V2 模块。
+关键事实（从 runbook 提取）：
 
-**方案 B（不推荐）**：把集群基建全部并入 `run_v2.py`。等于重写一遍
-Aliyun/OSS/续跑/重启，改动面大，且把两套职责（本地实验 + 集群实验）耦合在一起。
+- 主控机：`/home/zhilongli/OSWorld-V2`，venv `.venv/bin/python`，`.env` 已配好
+  `ALIYUN_*` / `OSS_*` / `ANTHROPIC_*` / `OPENAI_BASE_URL` / `OPENAI_API_KEY`。
+- qwen3.7-plus 走 OpenAI 协议：`POST {OPENAI_BASE_URL}/chat/completions`，模型名
+  `qwen3.7-plus`，thinking-off（`enable_thinking: false`）。
+- 官方 qwen 参数：screenshot + pyautogui + 500 steps + 16K max_tokens + 3s sleep。
+- M3 走 MiniMax Anthropic 端点，与 v2 当前配置一致。
+- 并发授权：1 env 联调、4 env（001-004）已授权；28/108 env 必须用户批准。
+- TTL 180min 不动；镜像不覆盖；密钥不进 git。
 
-## 改造清单
+## 核心决策
 
-### Phase 0：前置条件
+1. **不新写集群基建**：`python/run_v2_cluster.py` 以 `scripts/python/run_multienv.py`
+   为骨架复制改造，只替换 agent 工厂为 `PiOSWorldV2Agent`，并增加 v2 参数
+   （`--config` / `--config-root` / `--result-dir` / `--osworld-root` / `--task-set`）。
+2. **OSWorld-V2 部署**：集群直接部署同事 fork（含 aliyun / oss / lib_run_single）。
+   - 本地开发：clone `moreC/OSWorld-V2` 到 `external/OSWorld-V2-cluster`（锁 commit），
+     不改官方 submodule，避免本地 docker 语义漂移。
+   - 集群：锁同一 commit 于 `/home/zhilongli/OSWorld-V2`。
+3. **结果布局**：沿用同事的
+   `result_dir/<action_space>/<observation_type>/<model>/<domain>/<task_id>`；
+   v2 的 `events.jsonl` / `state` / `runner.log` / `manifest.json` 放进 task_id 目录，
+   这样 `get_unfinished` 与官方结果聚合脚本直接可用。
+4. **模型协议**：qwen 走 parametrix OpenAI chat/completions。v2 需要在
+   `src/models/client.ts` 注册一个自定义 provider（id 建议 `qwen-gateway`）：
+   `baseUrl = OPENAI_BASE_URL`、`auth = envApiKeyAuth(..., ["OPENAI_API_KEY"])`、
+   `api = openAICompletionsApi()`、模型 `qwen3.7-plus`（thinkingFormat=qwen）。
+   YAML 里 `models.main: qwen-gateway/qwen3.7-plus`；MiniMax anthropic 路径共存。
+5. **delegate / 子 agent**：集群 worker 进程内由 v2 serve 统一管理（Pi 后端），
+   不经过同事的 QwenInternalAgent 解析器。
 
-- [x] 确认 parametrix 网关协议（2026-08-11 实测）：
-      `/v1/chat/completions` 返回 200 可用；
-      `/v1/messages` 对 `qwen3.7-plus` 返回 503（路由存在但当前不可用）。
-      结论：暂不能零代码走 `anthropic/qwen3.7-plus`，需要二选一：
-      (a) 请网关提供方让 qwen 在 Anthropic Messages 端点可用；
-      (b) 给 v2 `src/models/client.ts` 增加 generic OpenAI 兼容 provider
-      （base URL + chat/completions）。实测确认 pi-ai 已内置
-      `openai-completions` API 和 `createProvider`（如 zai/opencode 等 provider
-      都走这条路），所以 v2 不需要手写协议翻译，只需注册一个 qwen provider：
-      base URL 用 `OPENAI_BASE_URL`、key 用 `OPENAI_API_KEY`、模型走
-      `openai-completions`，YAML 里写 `models.main: qwen/qwen3.7-plus`。
-      MiniMax 的 anthropic 路径保持不变，两者可共存。
-- [ ] 修复 `.env` 网关域名（session 中发现 `omni-gateway-sg.parametri.cn`
-      已 NXDOMAIN，当前可用的是 `parametrix.cn/v1`），并确认 qwen 实验的
-      `OPENAI_BASE_URL` / key。
-- [ ] 部署：把 `pi-osworld-v2`（含 `dist/` 和 `python/`）复制到集群；
-      `npm install && npm run build`。
-- [ ] 部署实验配置树：`osworld-experiments` 的 YAML + `prompts/` +
-      `task-sets/`，作为 `--config-root`。
-- [ ] 对齐 OSWorld-V2：集群的 OSWorld-V2 带 aliyun provider / `oss_results.py`，
-      与本机版本不同；部署时用集群版本，或把 aliyun provider 单独 vendor 进 v2。
+## 数据流
 
-### Phase 1：单任务冒烟
+```mermaid
+flowchart LR
+  Master["主控机 47.120.53.174"] --> Runner["run_v2_cluster.py (worker pool)"]
+  Runner --> Env["DesktopEnv AliyunProvider"]
+  Runner --> Bridge["PiOSWorldV2Agent -> v2 serve (node dist/cli.js serve)"]
+  Bridge --> Pi["pi backend (RoleAgent + PiModelClient)"]
+  Pi --> GW["parametrix OPENAI_BASE_URL / chat/completions"]
+  Env --> OSS["oss_results.py: 截图直写 OSS"]
+  Runner --> Local["task_dir: traj.jsonl/result.txt/events.jsonl/state"]
+  Local --> OSS2["mirror_task_dir 小文件镜像 OSS"]
+```
 
-- [ ] `python/run_v2_cluster.py` 支持：
-  - 读 v2 preset YAML（`models` / `termination` / `observation_capture`），
-    同时保留 CLI 覆盖（`--model`、`--max-steps`、`--num-envs` 等）
-  - 任务列表同时支持 `task-sets/*.yaml` 和集群 `test_all_meta.json`
-    （如 `meta_001_004.json`，格式 `{domain: [task_id]}`）
-  - agent 用 `PiOSWorldV2Agent(config_path, root, result_dir, episode_id)`
-  - 单任务先在集群 Aliyun 上跑通 1 个 task，产物与本地 v2 run 结构一致
-- [ ] 结果布局决策：集群保持
-      `result_dir/<action_space>/<observation_type>/<model>/<domain>/<task_id>`，
-      v2 的 `events.jsonl` / `state/` / `runner.log` 落在 task 目录下。
+每个 OSWorld step 的调用链：
+
+1. worker 从 task queue 取 task，创建/复用 VM（AliyunProvider）。
+2. `lib_run_single.run_single_example` 调 `PiOSWorldV2Agent.predict(instruction, obs)`。
+3. v2 serve 执行一轮 harness（含角色内部工具循环 / delegate / gate），返回 actions。
+4. `env.step(action)` 执行 pyautogui；截图与轨迹写 task_dir（OSS_ENABLED 时截图直写 OSS）。
+5. 任务结束 `env.evaluate()`，写 `result.txt` / `result.json`；`mirror_task_dir` 镜像小文件。
+
+## 阶段计划
+
+### Phase 0：前置依赖
+
+- [ ] 本地锁版拉取：`external/OSWorld-V2-cluster` = `moreC/OSWorld-V2` @ dev/zhilongli。
+- [ ] 确认 parametrix 网关可用域名（runbook 中 `omni-gateway-sg.parametrix.cn` 当前
+      NXDOMAIN；用 `parametrix.cn/v1` 或让网关方确认稳定域名）。
+- [ ] v2 增加 `qwen-gateway` provider + 单测（模型解析、thinking disabled、base_url/key）。
+- [ ] `run_v2.py` / `run_v2_cluster.py` CLI 补 `--provider-name aliyun`、
+      `--use-public-ip`、`--enable-vnc` / `--enable-recording`、`--region` 透传；
+      `DesktopEnv` 构造与同事 runner 对齐（`use_public_ip` / `enable_proxy` /
+      `require_a11y_tree` / `client_password`）。
+- [ ] 本机 dry-run：用 mock 或 docker 验证 `run_v2_cluster.py` 参数与 worker 循环。
+
+验收：`npm test` 通过；`run_v2_cluster.py --help` 包含全部集群参数；qwen provider
+在本地以 parametrix key 发一次最小请求成功。
+
+### Phase 1：集群单任务冒烟
+
+- [ ] 部署 v2 `dist/` + `python/` + 配置树到主控机（`scripts/deploy-cluster.sh`）。
+- [ ] `run_v2_cluster.py --config presets/stateact.yaml --provider-name aliyun
+      --osworld-root /home/zhilongli/OSWorld-V2 --num-envs 1` 跑 task 001 / 004。
+- [ ] 同时跑一个 m3 preset 作为对照；score 与本地 docker 同配置量级一致。
+- [ ] 产物检查：`result.txt` / `result.json` / `traj.jsonl` / `events.jsonl` / `state` /
+      `runner.log` / `args.json`；OSS 上有截图与镜像文件。
 
 ### Phase 2：并行 + 断点 + OSS
 
-- [ ] worker 循环：`num_envs` 个进程 + 共享 task queue + `shared_scores`
-- [ ] VM 复用与失败废弃（`_create_env` / `_discard_env`）
-- [ ] `get_unfinished()`：跳过已有 `result.txt` 的任务
-- [ ] `mirror_task_dir()`：每任务结束镜像到 OSS
-- [ ] `args.json` 存档 + worker 死亡自动重启
-- [ ] `--num-envs 4` 跑 `meta_001_004.json` 冒烟，与现有 qwen 流程对拍
+- [ ] worker 循环 + VM 复用 + `_discard_env` 失败废弃（沿用同事 runner 的做法）。
+- [ ] `get_unfinished` 跳过已有 `result.txt`（断点续跑）。
+- [ ] `mirror_task_dir` 每任务结束镜像；`args.json` 存档；worker 死亡自动重启。
+- [ ] `--num-envs 4` 跑 `meta_001_004.json` 冒烟，与同事 qwen 流程对拍。
 
 ### Phase 3：矩阵实验
 
-- [ ] matrix 入口：`matrix.yaml` 或 CLI，组合 2+ 配置 × 2+ 任务集，
-      每组合独立 run_id，避免结果目录互相覆盖
-- [ ] 结果对比：score / success rate 聚合 + events 事件数 + delegate 次数
-      + 轨迹形态，输出 markdown 对比报告
-- [ ] 与 v1 基线做同配置对比，确认集群环境不改变 harness 语义
+- [ ] 复用 v2 `matrix` / `compare`：2 配置 x 2 任务集，每个组合独立 run_id。
+- [ ] 聚合 score / success rate + events 指标（delegate 次数、工具调用、gate verdict）。
+- [ ] 输出 markdown 对比报告；与 v1 / 官方 baseline 做同配置对比。
 
-## 与本地 run_v2.py 的关系
+### Phase 4：生产化
 
-- `run_v2.py`：本地单机/docker 调试与单任务复现，保持现状。
-- `run_v2_cluster.py`：集群批处理入口，复用 `PiOSWorldV2Agent` 和同一套
-  spec/prompts，只换 provider（aliyun）和调度层。
-- 两个入口共享 `src/config`、`src/engine`、`python/pi_osworld_adapter*`，
-  避免出现两套 harness 语义。
+- [ ] `scripts/deploy-cluster.sh`：rsync pi-osworld-v2（dist + python + 配置树），
+      锁 OSWorld-V2 commit，写 `.env` 校验。
+- [ ] `scripts/cluster/start-*.sh` / `monitor.sh`：setsid nohup、pgrep、日志、OSS prefix。
+- [ ] 运行手册：并发授权流程、TTL、镜像版本、故障排查速查表。
 
-## 关键风险
+## 结果目录约定
 
-1. 模型网关：qwen 走 parametrix OpenAI 端点，当前 pi provider 不支持，
-   需要 Anthropic 兼容端点或新增 provider；这是 Phase 0 的阻塞项。
-2. OSWorld-V2 版本漂移：集群版本含 aliyun / oss_results，部署时版本必须锁定。
-3. VM 成本与配额：Aliyun 每任务建机很慢且可能撞配额，worker 复用 VM 是必须项。
-4. prompt 路径：集群上 `--config-root` 必须指向部署的 osworld-experiments，
-   且 v2 preset 的 prompt 路径与该目录保持一致。
+```text
+<result_dir>/
+└── pyautogui/screenshot/<model>/<domain>/<task_id>/
+    ├── result.txt / result.json
+    ├── traj.jsonl
+    ├── events.jsonl            # v2 结构化事件
+    ├── state/                  # v2 TaskStateStore
+    ├── runner.log
+    ├── args.json               # 集群 runner 参数存档
+    ├── step_*.png              # OSS_ENABLED=1 时直写 OSS，本地可能只有索引
+    └── recording.mp4
+```
 
-## 验收标准
+`get_unfinished` 以 `result.txt` 为准，因此同一结果目录重跑不会重复执行已完成任务。
 
-- [ ] Phase 1：集群 Aliyun 上单任务跑通，score 与本地同配置量级一致。
-- [ ] Phase 2：4 env 并行跑完 meta_001_004，断点续跑、OSS 镜像、args.json 齐全。
-- [ ] Phase 3：至少 2 配置 × 2 任务集的 matrix 一键跑完并输出对比报告。
+## 部署与环境变量
 
-## 决策点
+主控机 `.env`（已存在，v2 部署时复用，不新造）：
 
-1. 模型接入：推荐走 parametrix 的 OpenAI chat/completions（与
-   `launch_qwen_4.sh` 一致），在 v2 注册 qwen provider；仅当网关后续
-   提供可用的 `/v1/messages` 时才考虑零代码 Anthropic 路径。
-2. OSWorld-V2 部署：直接使用集群版本 vs vendor aliyun provider 进 v2。
-3. 结果目录：沿用集群布局 vs 保留 v2 `runs/<run_id>` 布局。
-4. 是否把集群 runner 的调度层抽成 v2 通用 `ClusterRunner`，后续再接其他云。
+```bash
+ALIYUN_ACCESS_KEY_ID / ALIYUN_ACCESS_KEY_SECRET
+ALIYUN_REGION / ALIYUN_IMAGE_ID / ALIYUN_INSTANCE_TYPE
+ALIYUN_VSWITCH_ID / ALIYUN_SECURITY_GROUP_ID
+DEFAULT_TTL_MINUTES=180 / ENABLE_TTL=true
+OSS_ENABLED=1 / OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET
+OSS_BUCKET / OSS_ENDPOINT / OSS_PREFIX
+ANTHROPIC_BASE_URL=https://api.minimaxi.com/anthropic
+ANTHROPIC_API_KEY / ANTHROPIC_MODEL=m3
+OPENAI_BASE_URL=<parametrix>/v1
+OPENAI_API_KEY
+```
+
+v2 部署目录建议：`/home/zhilongli/pi-osworld-v2`（或新用户名目录），`--osworld-root`
+指向 `/home/zhilongli/OSWorld-V2`（同事 fork）。
+
+## 风险与决策点
+
+1. **网关稳定性/域名**：`omni-gateway-sg.parametrix.cn` 当前 NXDOMAIN；先用
+   `parametrix.cn/v1`，后续让网关方提供稳定域名，或把 base URL 做成 YAML/env 可覆盖。
+2. **OSWorld-V2 版本漂移**：同事 fork 会继续改；集群和本地都锁 dev/zhilongli commit，
+   升级需单独 diff review。
+3. **并发与配额**：28 env 起 ECS 可能撞配额；28 个 agent 共用同一 api key 有 429 风险。
+   v2 的 `llm_retry` spec 要在集群运行中开启。
+4. **结果布局**：默认沿用官方/同事布局，避免 `get_unfinished` 和 score 聚合失效；
+   如果要 v2 特有布局，需要同步改 `get_unfinished` 与聚合脚本。
+5. **协议差异**：同事 QwenInternalAgent 用 XML tool-call + history folding，v2 用 Pi
+   的 native tool call + 上下文管理器；集群对比实验必须用同一 harness 语义（v2），
+   与官方 baseline 对比时才需要协议对齐。
+6. **SSH/密钥**：`docs/OSWORLD_V2_ALIYUN_RUNBOOK.md` 与 `.env` 禁止 push 到公开仓库。
