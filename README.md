@@ -5,7 +5,7 @@
 旧 `pi-osworld` 的 `RoleAgent`/`PiContextManager`/`RoleSubagent` 只 import 不重写，
 经 `src/legacy/imports.ts` 唯一通道接入。
 
-> 设计文档 `/home/binqiu/pi-osworld/DESIGN-v2.md`；落地计划见 `PLAN.md`。
+> 设计文档 `DESIGN-v2.md`；落地计划见 `PLAN.md`。
 
 ## 已实现
 
