@@ -1,0 +1,21 @@
+# MEA 演示实验：mock 后端跑通（不调模型）
+experiment: mea-demo
+extends: ../presets/mea.yaml
+description: MEA demo with mock backend
+
+benchmark: { name: osworld-v2, release: osworld-v2-2026.06.24 }
+task_set: task-sets/smoke.yaml
+
+roles:
+  manager:
+    backend: mock
+    prompt: { system: ../prompts/roles/manager.md }
+  executor:
+    backend: mock
+    prompt: { system: ../prompts/roles/executor.md }
+  gui_executor:
+    backend: mock
+    prompt: { system: ../prompts/roles/gui-specialist.md }
+  auditor:
+    backend: mock
+    prompt: { system: ../prompts/roles/auditor.md }

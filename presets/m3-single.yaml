@@ -1,0 +1,24 @@
+# m3-single 拓扑（对应旧 topology: m3-single）
+experiment: m3-single
+
+models:
+  main: anthropic/MiniMax-M3
+
+roles:
+  main:
+    backend: pi
+    model: main
+    prompt: { system: prompts/roles/m3-main.md }
+    observation: { allow: [screenshot] }
+    context: screenshot-recent
+    tools: [computer.pyautogui]
+    receives: [task]
+
+loop:
+  driver: self_report
+  role: main
+  done_tool: computer.done
+  max_rounds: 30
+
+termination:
+  max_steps: 100

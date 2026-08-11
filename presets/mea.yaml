@@ -1,0 +1,66 @@
+# 论文 LongHorizon-Harness 的 MEA 拓扑，表达为一份组合配置。
+# 注意：prompt.system 路径相对 config root 解析，实验文件里可覆盖为实际路径。
+experiment: mea
+description: MEA topology (Manager-Execute-Audit), paper as config
+
+models:
+  manager: anthropic/MiniMax-M3
+  executor: anthropic/MiniMax-M3
+  gui_executor: anthropic/MiniMax-M3
+  auditor: anthropic/MiniMax-M3
+
+roles:
+  manager:
+    backend: pi
+    model: manager
+    prompt: { system: prompts/roles/manager.md }
+    observation: { allow: [state] }
+    tools: []                            # manager 无环境工具
+    receives: [task, task_state, audit_history]
+    budget: { max_seconds: 600 }
+  executor:
+    backend: pi
+    model: executor
+    prompt: { system: prompts/roles/executor.md }
+    observation: { allow: [state, terminal] }
+    context: { fresh_per_round: true }
+    tools: [state.inspect, state.bash, state.python, state.write_file]
+    receives: [task, contract]
+    budget: { max_seconds: 1800 }
+  gui_executor:
+    backend: pi
+    model: gui_executor
+    prompt: { system: prompts/roles/gui-specialist.md }
+    observation: { allow: [screenshot, accessibility_tree] }
+    context: { fresh_per_round: true }
+    tools: [computer.pyautogui]
+    receives: [task, contract]
+    budget: { max_seconds: 1800 }
+  auditor:
+    backend: pi
+    model: auditor
+    prompt: { system: prompts/roles/auditor.md }
+    observation: { allow: [state, terminal] }
+    context: { fresh_per_round: true }
+    tools: [state.inspect_ro]
+    receives: [task, contract, executor_report]
+    read_only: enforce
+    budget: { max_seconds: 600 }
+
+state:
+  schema: [requirements, artifacts, facts]
+  store: file
+  update_policy: audit_verified          # 只有 clean 审计证据才能标记 completed
+
+loop:
+  driver: manager_decision
+  decision_tool: manager.decide
+  contract:
+    produced_by: manager
+    fields: [goal, acceptance_criteria, boundary_constraints, evidence_refs, target]
+  routing: { gui: gui_executor, cli: executor }
+  max_rounds: 25
+
+termination:
+  on: [done, blocked, ask, max_rounds]
+  max_steps: 200
