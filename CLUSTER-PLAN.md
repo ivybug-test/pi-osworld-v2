@@ -42,10 +42,13 @@ Aliyun/OSS/续跑/重启，改动面大，且把两套职责（本地实验 + �
 
 ### Phase 0：前置条件
 
-- [ ] 确认 parametrix 网关是否提供 Anthropic Messages 端点。
-      若提供，YAML 里 `models.main: anthropic/qwen3.7-plus` 即可零代码接入；
-      若不提供，需要给 v2 `src/models/client.ts` 增加 generic OpenAI 兼容
-      provider（base URL + chat/completions）。
+- [x] 确认 parametrix 网关协议（2026-08-11 实测）：
+      `/v1/chat/completions` 返回 200 可用；
+      `/v1/messages` 对 `qwen3.7-plus` 返回 503（路由存在但当前不可用）。
+      结论：暂不能零代码走 `anthropic/qwen3.7-plus`，需要二选一：
+      (a) 请网关提供方让 qwen 在 Anthropic Messages 端点可用；
+      (b) 给 v2 `src/models/client.ts` 增加 generic OpenAI 兼容 provider
+      （base URL + chat/completions 请求/响应翻译）。
 - [ ] 修复 `.env` 网关域名（session 中发现 `omni-gateway-sg.parametri.cn`
       已 NXDOMAIN，当前可用的是 `parametrix.cn/v1`），并确认 qwen 实验的
       `OPENAI_BASE_URL` / key。
