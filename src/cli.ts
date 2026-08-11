@@ -163,8 +163,8 @@ async function cmdRun(args: CliArgs): Promise<void> {
   });
 
   const dbg = args.interactive
-    ? new CliDebugger({ interactive: true })
-    : new RecordingDebugger();
+    ? new CliDebugger({ interactive: true, resultDir })
+    : new RecordingDebugger(resultDir);
   const runtime = new Runtime({
     spec,
     root: loaded.root,

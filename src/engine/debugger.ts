@@ -1,4 +1,5 @@
 import type { EpisodeRequest, EpisodeResult, RoundContext } from "./types.js";
+import { appendIntervention, type InterventionEntry } from "./interventions.js";
 
 // ---------------------------------------------------------------------------
 // 调试器：一等公民。事件日志 / 交互暂停 / 干预（DESIGN-v2.md 10.5）
@@ -25,6 +26,9 @@ export interface Debugger {
 /** 记录型调试器：收集全部事件，供测试与 replay。 */
 export class RecordingDebugger implements Debugger {
   readonly events: DebugEvent[] = [];
+  readonly interventions: InterventionEntry[] = [];
+
+  constructor(private readonly resultDir?: string) {}
 
   async onRoundStart(ctx: RoundContext): Promise<void> {
     this.events.push({ type: "round.start", round: ctx.index, episodeId: ctx.episodeId });
@@ -42,7 +46,9 @@ export class RecordingDebugger implements Debugger {
     throw new Error(`RecordingDebugger.inspect not implemented: ${path}`);
   }
   async mutate(path: string, value: unknown): Promise<void> {
-    throw new Error(`RecordingDebugger.mutate not implemented: ${path}`);
+    const entry: InterventionEntry = { timestamp: Date.now(), path, value };
+    this.interventions.push(entry);
+    if (this.resultDir) appendIntervention(this.resultDir, entry);
   }
 }
 
@@ -52,6 +58,7 @@ export class CliDebugger implements Debugger {
     private readonly opts: {
       interactive?: boolean;
       log?: (line: string) => void;
+      resultDir?: string;
     } = {},
   ) {}
 
@@ -87,7 +94,14 @@ export class CliDebugger implements Debugger {
   }
 
   async mutate(path: string, value: unknown): Promise<void> {
-    this.out(`mutate ${path} = ${JSON.stringify(value)} (记录到 interventions.jsonl)`);
+    this.out(`mutate ${path} = ${JSON.stringify(value)} (recorded)`);
+    if (this.opts.resultDir) {
+      appendIntervention(this.opts.resultDir, {
+        timestamp: Date.now(),
+        path,
+        value,
+      });
+    }
   }
 
   private async pause(ctx: RoundContext): Promise<void> {

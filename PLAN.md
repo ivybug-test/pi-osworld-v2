@@ -76,11 +76,9 @@
 - [x] B2 read_only 双闸（PiBackend 执行层 + HttpEnvironment 环境层；写工具集合统一）
 - [x] B3 serve 命令（JSONL bridge，复用旧 BridgeRequest/BridgeResponse；roundLimit+resume）
 - [x] B4 step 驱动冒烟（3 个 predict 状态跨 step 落盘，replay 可复现；37 单测通过）
-- [ ] C1–C3 复现闭环
-- [ ] D1–D4 组合能力
-- [x] B1 环境层抽象（src/env/types.ts + HttpEnvironment，复用旧 HttpToolExecutor）
-- [x] B2 read_only 双闸（PiBackend 执行层 + HttpEnvironment 环境层；写工具集合统一）
-- [x] B3 serve 命令（JSONL bridge，复用旧 BridgeRequest/BridgeResponse；roundLimit+resume）
-- [x] B4 step 驱动冒烟（3 个 predict 状态跨 step 落盘，replay 可复现；37 单测通过）
-- [ ] C1–C3 复现闭环
-- [ ] D1–D4 组合能力
+- [ ] C1–C3 复现闭环（task 004 m3/stateact 正在实跑对齐中）
+- [x] D1 manager_decision driver（mock 单测覆盖 execute→executor→auditor→state_update）
+- [ ] D2 IntegrityMonitor（环境侧 snapshot/diff，挂 tool server；Runtime.checkIntegrity 当前为占位）
+- [x] D3 debug mutate 持久化 `interventions.jsonl`（RecordingDebugger/CliDebugger 均落盘，单测覆盖）
+- [x] D4 matrix / compare / manifest：`run_v2.py` 启动写 `manifest.json`；
+      `piosworld compare` 支持父目录枚举；`piosworld matrix` 展开并顺序执行 run_v2.py

@@ -54,7 +54,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     mockScriptPath: options.mockScript,
     emit,
   });
-  const dbg = new RecordingDebugger();
+  const dbg = new RecordingDebugger(options.resultDir);
   const runtime = new Runtime({
     spec,
     root: loaded.root,
