@@ -9,6 +9,10 @@ import {
   mergeContextConfig,
   PiContextManager,
 } from "../context/manager.js";
+import {
+  applyM3ImageTruncation,
+  type M3ImageTruncationOptions,
+} from "../context/image-truncation.js";
 import type { FlowContext, StepInput } from "../flows/types.js";
 import {
   createPiModelClient,
@@ -55,6 +59,7 @@ export class RoleAgent {
   private prompt?: ResolvedPrompt;
   private client?: PiModelClient;
   private contextManager?: PiContextManager;
+  private m3ImageTruncation?: M3ImageTruncationOptions;
   private turnCount = 0;
   private costUsd = 0;
 
@@ -70,13 +75,24 @@ export class RoleAgent {
     if (!roleConfig) throw new Error(`unknown agent role: ${this.role}`);
     this.prompt = await resolvePrompt(roleConfig.prompt, this.context.root);
     this.client = this.clientOverride ?? this.createClient();
+    const mergedContext = mergeContextConfig(
+      this.context.config.context,
+      roleConfig.context,
+    );
     this.contextManager = new PiContextManager({
-      ...contextOptionsFromConfig(
-        mergeContextConfig(this.context.config.context, roleConfig.context),
-      ),
+      ...contextOptionsFromConfig(mergedContext),
       onError: (message) =>
         this.context.writer.event("context.compact_failed", { error: message }),
     });
+    const imageTruncation = mergedContext?.compaction?.image_truncation;
+    this.m3ImageTruncation =
+      mergedContext?.compaction?.strategy === "m3-image-truncation"
+        ? {
+            screenshotTurns: imageTruncation?.screenshot_turns,
+            chunkSize: imageTruncation?.chunk_size,
+            placeholder: imageTruncation?.placeholder,
+          }
+        : undefined;
   }
 
   async reset(): Promise<void> {
@@ -110,7 +126,7 @@ export class RoleAgent {
     const contextManager = this.requireContextManager();
     await contextManager.append(userMessage);
 
-    let messages = await contextManager.build();
+    let messages = this.applyM3Truncation(await contextManager.build());
     if (transform) messages = transform(messages);
 
     const assistant = await this.requireClient().complete(
@@ -155,7 +171,7 @@ export class RoleAgent {
     await contextManager.append(userMessage);
 
     for (let round = 0; round < maxToolCalls; round += 1) {
-      let messages = await contextManager.build();
+      let messages = this.applyM3Truncation(await contextManager.build());
       if (options.transform) messages = options.transform(messages);
 
       const assistant = await this.requireClient().complete(
@@ -254,12 +270,20 @@ export class RoleAgent {
   }
 
   private createClient(): PiModelClient {
+    const roleConfig = this.context.config.agents[this.role];
     return createPiModelClient(this.context.config.models, {
       writer: this.context.writer,
       includeImages: this.context.config.trace?.include_images ?? false,
       maxRetries: this.context.config.llm_retry?.max_retries,
       maxRetryDelayMs: this.context.config.llm_retry?.max_retry_delay_ms,
+      sampling: roleConfig?.model_options,
     });
+  }
+
+  private applyM3Truncation(messages: Message[]): Message[] {
+    return this.m3ImageTruncation
+      ? applyM3ImageTruncation(messages, this.m3ImageTruncation)
+      : messages;
   }
 
   private trackUsage(assistant: AssistantMessage): void {
@@ -306,6 +330,16 @@ export function assistantToolCalls(
     (block): block is Extract<AssistantMessage["content"][number], { type: "toolCall" }> =>
       block.type === "toolCall",
   );
+}
+
+/** Human-readable reason when a model completion failed, or undefined. */
+export function modelErrorMessage(
+  assistant: AssistantMessage,
+): string | undefined {
+  if (assistant.stopReason !== "error" && !assistant.errorMessage) {
+    return undefined;
+  }
+  return assistant.errorMessage || "model returned an error response";
 }
 
 export function toolResultMessage(

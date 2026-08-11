@@ -1,4 +1,4 @@
-# stateact 演示实验：extends preset，补全 benchmark/task_set；默认 mock 可无模型冒烟
+# stateact 演示实验：extends preset；默认 mock 可无模型冒烟
 experiment: stateact-demo
 extends: ../presets/stateact.yaml
 description: StateAct topology demo (mock backend by default)
@@ -9,7 +9,7 @@ task_set: task-sets/smoke.yaml
 roles:
   main:
     backend: mock
-    prompt: { system: ../prompts/roles/executor.md }   # 演示用占位 prompt；复现时换成 main-state-only.md
+    prompt: { system: ../prompts/roles/main-state-only.md }
   gui:
     backend: mock
     prompt: { system: ../prompts/roles/gui-specialist.md }

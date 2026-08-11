@@ -102,9 +102,19 @@
 
 ## 验收标准
 
-- [ ] v2 建立 git 基线。
-- [ ] v2 `npm test` 全绿，`npm run build` 通过。
-- [ ] v2 能直接加载 v1 当前两个实验 YAML。
-- [ ] v2 两份 preset / prompts 与 v1 配置语义一致。
+- [x] v2 建立 git 基线。
+- [x] v2 `npm test` 全绿（38 个用例），`npm run build` 通过。
+- [x] v2 能直接加载 v1 当前两个实验 YAML。
+- [x] v2 两份 preset / prompts 与 v1 配置语义一致。
 - [ ] v2 真实跑通 task 004 的 m3 与 stateact，行为与 v1 对齐。
 - [ ] 对齐完成后 v1 冻结，后续修改只发生在 v2。
+
+## 当前进度
+
+- [x] 2026-08-11：v2 建立 git 基线（`078aff2`）。
+- [x] 2026-08-11：同步 v1 legacy 实现修复（role/context/gate/subagent/observation/tools/python adapter 等），
+  `HarnessSpec` 增加 `m3-image-truncation`、`image_truncation`、`model_options`、checkpoint、runtime；
+  `legacyCompat` 支持当前 v1 YAML。
+- [x] 2026-08-11：`presets/m3-single.yaml` 与 `presets/stateact.yaml` 对齐 v1 配置，
+  真实 prompts 已复制进 v2；mock 冒烟 m3 / stateact 均通过。
+- [ ] 待确认：task 004 真实运行对齐（v2 各跑一次 m3 / stateact）。

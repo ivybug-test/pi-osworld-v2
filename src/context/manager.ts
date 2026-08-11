@@ -19,6 +19,7 @@ import {
   type TurnRetentionConfig,
   sanitizeAgentMessages,
 } from "./compaction.js";
+import type { M3ImageTruncationOptions } from "./image-truncation.js";
 
 export interface PiContextOptions {
   /** Model context window used for compaction decisions. */
@@ -27,6 +28,8 @@ export interface PiContextOptions {
   /** Strategy used when the context window is crossed. Defaults to pi-summary. */
   strategy?: CompactionStrategyId;
   turnRetention?: TurnRetentionConfig;
+  /** M3-style image truncation knobs; applied as a view transform by RoleAgent. */
+  imageTruncation?: M3ImageTruncationOptions;
   /** Called when compaction fails; the run continues with the full history. */
   onError?: (message: string) => void;
 }
@@ -44,6 +47,13 @@ export function contextOptionsFromConfig(
     contextWindow: config?.context_window,
     strategy: config?.compaction?.strategy,
     turnRetention: config?.compaction?.turn_retention,
+    imageTruncation: config?.compaction?.image_truncation
+      ? {
+          screenshotTurns: config.compaction.image_truncation.screenshot_turns,
+          chunkSize: config.compaction.image_truncation.chunk_size,
+          placeholder: config.compaction.image_truncation.placeholder,
+        }
+      : undefined,
     compaction: config?.compaction
       ? {
           enabled: config.compaction.enabled,
@@ -75,6 +85,8 @@ export function mergeContextConfig(
           ...role.compaction,
           turn_retention:
             role.compaction.turn_retention ?? globalCompaction.turn_retention,
+          image_truncation:
+            role.compaction.image_truncation ?? globalCompaction.image_truncation,
         }
       : global?.compaction,
   };

@@ -2,9 +2,27 @@ import type { ObservationPolicy } from "../legacy-config/spec.js";
 
 export interface ObservationEnvelope {
   screenshotB64?: string;
+  /** MIME type of screenshotB64. Defaults to image/png for legacy payloads. */
+  screenshotMime?: string;
   accessibilityTree?: string;
   userResponse?: string;
   terminal?: string;
+}
+
+/**
+ * Accept both wire formats for the screenshot payload. The Node bridge reads
+ * camelCase, while some producers historically sent snake_case; without this
+ * guard, a mismatched key silently drops the screenshot from every observation.
+ */
+export function normalizeObservation(
+  observation: ObservationEnvelope,
+): ObservationEnvelope {
+  const raw = observation as ObservationEnvelope & {
+    screenshot_b64?: string;
+  };
+  const { screenshot_b64, ...rest } = raw;
+  if (!screenshot_b64 || rest.screenshotB64) return rest;
+  return { ...rest, screenshotB64: screenshot_b64 };
 }
 
 export type ObservationChannel =

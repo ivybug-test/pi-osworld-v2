@@ -1,6 +1,7 @@
 import type { AssistantMessage, ImageContent, UserMessage } from "@earendil-works/pi-ai";
 import {
   assistantToolCalls,
+  modelErrorMessage,
   RoleAgent,
   toolResultMessage,
 } from "../agents/role.js";
@@ -106,6 +107,14 @@ export class RoleSubagent implements Subagent {
       );
       if (this.onTurn?.() === false) break;
 
+      const modelError = modelErrorMessage(lastAssistant);
+      if (modelError) {
+        return {
+          report: `subagent ${this.id} model error: ${modelError}`,
+          actions: [],
+        };
+      }
+
       const calls = assistantToolCalls(lastAssistant);
       if (calls.length === 0) {
         const report = this.extractReport(lastAssistant, calls);
@@ -178,7 +187,13 @@ export class RoleSubagent implements Subagent {
   ): UserMessage {
     const view = buildRoleView(observationPolicy, observation, input.task);
     const imageContent: ImageContent[] = view.screenshot
-      ? [{ type: "image", data: view.screenshot, mimeType: "image/png" }]
+      ? [
+          {
+            type: "image",
+            data: view.screenshot,
+            mimeType: observation.screenshotMime ?? "image/png",
+          },
+        ]
       : [];
     const textParts: string[] = [];
     if (view.stateText) {

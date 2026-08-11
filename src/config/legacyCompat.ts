@@ -43,6 +43,9 @@ export function convertLegacySpec(raw: RawRecord): RawRecord {
       observation: agent.observation ?? { allow: [] },
       tools: asArray(agent.tools),
     };
+    if (agent.model_options !== undefined) {
+      role.model_options = agent.model_options;
+    }
     if (agent.context !== undefined) role.context = agent.context;
     if (agent.memory !== undefined) role.memory = agent.memory;
     if (topology === "stateact-minimal" && id === "main") {
@@ -124,6 +127,12 @@ export function convertLegacySpec(raw: RawRecord): RawRecord {
       ...(termination.max_steps !== undefined
         ? { max_steps: termination.max_steps }
         : {}),
+      ...(termination.checkpoint_eval_mode !== undefined
+        ? { checkpoint_eval_mode: termination.checkpoint_eval_mode }
+        : {}),
+      ...(termination.checkpoint_steps !== undefined
+        ? { checkpoint_steps: termination.checkpoint_steps }
+        : {}),
     },
     state: {
       schema: ["requirements", "artifacts", "facts"],
@@ -140,6 +149,7 @@ export function convertLegacySpec(raw: RawRecord): RawRecord {
     "llm_retry",
     "repetitions",
     "seed",
+    "runtime",
   ] as const) {
     if (raw[key] !== undefined) out[key] = raw[key];
   }

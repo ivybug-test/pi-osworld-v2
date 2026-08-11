@@ -1,5 +1,9 @@
 import type { UserMessage } from "@earendil-works/pi-ai";
-import { assistantToolCalls, RoleAgent } from "../agents/role.js";
+import {
+  assistantToolCalls,
+  modelErrorMessage,
+  RoleAgent,
+} from "../agents/role.js";
 import type { FlowContext, StepInput } from "../flows/types.js";
 import type { PiModelClient } from "../models/client.js";
 import type { ObservationEnvelope } from "../observation/router.js";
@@ -118,6 +122,19 @@ export class FinishGate {
         maxToolCalls: context.config.agents["finish_gate"].budget?.max_steps ?? 20,
       },
     );
+
+    const modelError = modelErrorMessage(assistant);
+    if (modelError) {
+      context.writer.event("finish_gate.error", {
+        episode_id: input.episodeId,
+        step: input.step,
+        error: modelError,
+      });
+      return {
+        accepted: false,
+        feedback: `Finish gate model error: ${modelError}`,
+      };
+    }
 
     const verdictCall = assistantToolCalls(assistant).find(
       (call) => call.name === "finish_gate.verdict",

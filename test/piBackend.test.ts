@@ -108,7 +108,7 @@ describe("legacy runtime bridge (A3)", () => {
     expect(legacy.subagents?.gui.role).toBe("gui");
     expect(legacy.subagents?.gui.terminal_tool).toBe("delegation.complete");
     expect(legacy.llm_retry?.max_retries).toBe(2);
-    expect(legacy.termination.max_steps).toBe(200);
+    expect(legacy.termination.max_steps).toBe(500);
   });
 
   it("fills v2 spec knobs via legacyCompat (A2 spec surface)", () => {

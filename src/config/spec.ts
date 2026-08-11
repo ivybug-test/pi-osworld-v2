@@ -35,13 +35,26 @@ export const CompactionSpec = z.object({
   reserve_tokens: z.number().int().optional(),
   keep_recent_tokens: z.number().int().optional(),
   strategy: z
-    .enum(["pi-summary", "turn-retention", "truncate", "none"])
+    .enum([
+      "pi-summary",
+      "turn-retention",
+      "m3-image-truncation",
+      "truncate",
+      "none",
+    ])
     .optional(),
   turn_retention: z
     .object({
       screenshot_turns: z.number().int().optional(),
       text_turns: z.number().int().optional(),
       summarize_text: z.boolean().optional(),
+    })
+    .optional(),
+  image_truncation: z
+    .object({
+      screenshot_turns: z.number().int().optional(),
+      chunk_size: z.number().int().optional(),
+      placeholder: z.string().optional(),
     })
     .optional(),
 });
@@ -69,9 +82,19 @@ export const ReceivesSource = z.enum([
 ]);
 export type ReceivesSource = z.infer<typeof ReceivesSource>;
 
+export const ModelSamplingSpec = z.object({
+  temperature: z.number().optional(),
+  max_tokens: z.number().int().positive().optional(),
+  top_p: z.number().nullable().optional(),
+  thinking_mode: z.enum(["adaptive", "disabled"]).optional(),
+  thinking_budget: z.number().int().positive().optional(),
+});
+export type ModelSamplingSpec = z.infer<typeof ModelSamplingSpec>;
+
 export const RoleSpec = z.object({
   backend: BackendId.default("pi"),
   model: z.string(),
+  model_options: ModelSamplingSpec.optional(),
   prompt: z.object({
     system: z.string(),
     append: z.array(z.string()).optional(),
@@ -167,8 +190,16 @@ export const TerminationSpec = z.object({
     .array(z.enum(["done", "blocked", "ask", "max_rounds", "timeout"]))
     .optional(),
   max_steps: z.number().int().positive().optional(),
+  checkpoint_eval_mode: z.enum(["off", "inline"]).optional(),
+  checkpoint_steps: z.array(z.number().int().positive()).optional(),
 });
 export type TerminationSpec = z.infer<typeof TerminationSpec>;
+
+export const RuntimeSpec = z.object({
+  num_envs: z.number().int().positive().optional(),
+  env_start_delay: z.number().nonnegative().optional(),
+});
+export type RuntimeSpec = z.infer<typeof RuntimeSpec>;
 
 export const DebugSpec = z.object({
   pause_after: z.array(z.string()).optional(),
@@ -236,6 +267,7 @@ export const HarnessSpec = z.object({
   gates: z.record(GateSpec).optional(),
   loop: LoopSpec,
   termination: TerminationSpec.optional(),
+  runtime: RuntimeSpec.optional(),
   debug: DebugSpec.optional(),
   repetitions: z.number().int().positive().optional(),
   seed: z.number().optional(),

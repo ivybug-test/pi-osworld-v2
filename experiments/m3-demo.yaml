@@ -1,0 +1,12 @@
+# m3 演示实验：extends preset；默认 mock 可无模型冒烟
+experiment: m3-demo
+extends: ../presets/m3-single.yaml
+description: M3 topology demo (mock backend by default)
+
+benchmark: { name: osworld-v2, release: osworld-v2-2026.06.24 }
+task_set: task-sets/smoke.yaml
+
+roles:
+  main:
+    backend: mock
+    prompt: { system: ../prompts/roles/m3-main.md }

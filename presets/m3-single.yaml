@@ -1,16 +1,59 @@
-# m3-single 拓扑（对应旧 topology: m3-single）
+# m3-single 拓扑（与 v1 experiments/m3-single.yaml 对齐）
 experiment: m3-single
+
+benchmark:
+  name: osworld-v2
+  release: osworld-v2-2026.06.24
+
+task_set: task-sets/smoke.yaml
+
+context:
+  engine: pi-session
+  context_window: 200000
+  compaction:
+    strategy: m3-image-truncation
+    image_truncation:
+      screenshot_turns: 10
+      chunk_size: 20
+      placeholder: "Tool result: Success"
+
+trace:
+  llm_requests: true
+  include_images: false
+
+llm_retry:
+  max_retries: 2
+  max_retry_delay_ms: 60000
 
 models:
   main: anthropic/MiniMax-M3
+
+runtime:
+  num_envs: 1
 
 roles:
   main:
     backend: pi
     model: main
-    prompt: { system: prompts/roles/m3-main.md }
-    observation: { allow: [screenshot] }
-    context: screenshot-recent
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/m3-main.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [screenshot]
+    context:
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
     tools: [computer.pyautogui]
     receives: [task]
 
@@ -18,7 +61,9 @@ loop:
   driver: self_report
   role: main
   done_tool: computer.done
-  max_rounds: 30
+  max_rounds: 500
 
 termination:
-  max_steps: 100
+  max_steps: 500
+  checkpoint_eval_mode: inline
+  checkpoint_steps: [150, 300]

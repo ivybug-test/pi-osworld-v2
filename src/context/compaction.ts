@@ -13,6 +13,7 @@ import {
 export type CompactionStrategyId =
   | "pi-summary"
   | "turn-retention"
+  | "m3-image-truncation"
   | "truncate"
   | "none";
 
@@ -174,6 +175,10 @@ export function createCompactionStrategy(
       return new PiSummaryCompactor();
     case "turn-retention":
       return new TurnRetentionCompactor(turnRetention);
+    case "m3-image-truncation":
+      // Image truncation is applied as a deterministic view transform before
+      // each completion (see RoleAgent), never as a model-backed summary.
+      return new NoneCompactor();
     case "truncate":
       return new TruncateCompactor();
     case "none":

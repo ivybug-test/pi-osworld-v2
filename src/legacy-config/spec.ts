@@ -18,6 +18,19 @@ export interface PromptSpec {
   skills?: string[];
 }
 
+export interface ModelSamplingConfig {
+  /** Provider temperature; ignored when extended thinking is enabled by Pi. */
+  temperature?: number;
+  /** Max output tokens for one completion. */
+  max_tokens?: number;
+  /** Top-p. Kept for config parity; Pi's Anthropic adapter currently ignores it. */
+  top_p?: number | null;
+  /** Map to Pi's thinkingEnabled / thinkingBudgetTokens for Anthropic. */
+  thinking_mode?: "adaptive" | "disabled";
+  /** Budget for non-adaptive thinking; ignored for adaptive models. */
+  thinking_budget?: number;
+}
+
 export interface ObservationPolicy {
   allow: string[];
   deny?: string[];
@@ -30,6 +43,8 @@ export interface BudgetSpec {
 
 export interface AgentRoleConfig {
   model: string;
+  /** Sampling knobs passed to the provider on every completion. */
+  model_options?: ModelSamplingConfig;
   prompt: PromptSpec;
   observation: ObservationPolicy;
   /**
@@ -70,6 +85,10 @@ export interface TerminationBudgetConfig {
 export interface TerminationConfig {
   max_steps: number;
   max_cost_usd?: number;
+  /** OSWorld inline checkpoint evaluation mode. */
+  checkpoint_eval_mode?: "off" | "inline";
+  /** Logical step numbers for inline checkpoint evals, e.g. [150, 300]. */
+  checkpoint_steps?: number[];
   /** Run the independent finish gate when the main agent calls finish. */
   require_finish_gate?: boolean;
   finish_gate?: FinishGateConfig;
@@ -100,12 +119,23 @@ export interface CompactionConfig {
   reserve_tokens?: number;
   keep_recent_tokens?: number;
   /** Which compaction strategy to use once the threshold is crossed. */
-  strategy?: "pi-summary" | "turn-retention" | "truncate" | "none";
+  strategy?:
+    | "pi-summary"
+    | "turn-retention"
+    | "m3-image-truncation"
+    | "truncate"
+    | "none";
   /** Retention knobs for the turn-retention strategy. */
   turn_retention?: {
     screenshot_turns?: number;
     text_turns?: number;
     summarize_text?: boolean;
+  };
+  /** M3-style image truncation: keep recent screenshots, replace older images. */
+  image_truncation?: {
+    screenshot_turns?: number;
+    chunk_size?: number;
+    placeholder?: string;
   };
 }
 
@@ -114,6 +144,13 @@ export interface ContextConfig {
   engine?: "pi-session";
   context_window?: number;
   compaction?: CompactionConfig;
+}
+
+export interface RuntimeConfig {
+  /** Number of parallel VM environments. Defaults to 1. */
+  num_envs?: number;
+  /** Stagger worker startup in seconds. */
+  env_start_delay?: number;
 }
 
 export interface ExperimentConfig {
@@ -127,6 +164,7 @@ export interface ExperimentConfig {
   llm_retry?: LlmRetryConfig;
   repetitions?: number;
   seed?: number;
+  runtime?: RuntimeConfig;
   models: Record<string, string>;
   topology: TopologyId;
   agents: Record<string, AgentRoleConfig>;

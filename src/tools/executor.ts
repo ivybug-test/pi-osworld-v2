@@ -1,4 +1,5 @@
 import type { ObservationEnvelope } from "../observation/router.js";
+import { normalizeObservation } from "../observation/router.js";
 
 export interface ToolCallLike {
   name: string;
@@ -94,7 +95,7 @@ export class HttpToolExecutor implements ToolExecutor {
         ok: boolean;
         observation?: ObservationEnvelope;
       };
-      return body.ok ? body.observation : undefined;
+      return body.ok ? normalizeObservation(body.observation ?? {}) : undefined;
     } catch {
       return undefined;
     }

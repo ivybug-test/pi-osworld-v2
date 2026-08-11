@@ -11,6 +11,7 @@ import type {
   UserMessage,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+import type { ModelSamplingConfig } from "../legacy-config/spec.js";
 import type { RunWriter } from "../telemetry/writer.js";
 import { resolveModelRef, type ModelRef } from "./registry.js";
 
@@ -27,6 +28,8 @@ export interface PiModelClientOptions {
   maxRetries?: number;
   /** Cap on server-requested retry delays in milliseconds. */
   maxRetryDelayMs?: number;
+  /** Per-role sampling knobs forwarded to Pi's provider stream options. */
+  sampling?: ModelSamplingConfig;
 }
 
 export interface PiModelClient {
@@ -50,6 +53,7 @@ export function createPiModelClient(
   const includeImages = options.includeImages ?? false;
   const maxRetries = options.maxRetries;
   const maxRetryDelayMs = options.maxRetryDelayMs;
+  const sampling = options.sampling;
   return {
     async complete(alias, context, trace) {
       const { models, model, ref } = resolveModelForAlias(modelConfig, alias);
@@ -59,6 +63,7 @@ export function createPiModelClient(
       try {
         assistant = await models.complete(model, context, {
           cacheRetention: "none",
+          ...samplingOptions(sampling),
           ...(maxRetries !== undefined ? { maxRetries } : {}),
           ...(maxRetryDelayMs !== undefined ? { maxRetryDelayMs } : {}),
         });
@@ -92,6 +97,35 @@ export function createPiModelClient(
         }
       }
     },
+  };
+}
+
+function samplingOptions(
+  sampling?: ModelSamplingConfig,
+): {
+  temperature?: number;
+  maxTokens?: number;
+  thinkingEnabled?: boolean;
+  thinkingBudgetTokens?: number;
+} {
+  if (!sampling) return {};
+  return {
+    ...(sampling.temperature !== undefined
+      ? { temperature: sampling.temperature }
+      : {}),
+    ...(sampling.max_tokens !== undefined
+      ? { maxTokens: sampling.max_tokens }
+      : {}),
+    ...(sampling.thinking_mode === "adaptive"
+      ? {
+          thinkingEnabled: true,
+          ...(sampling.thinking_budget !== undefined
+            ? { thinkingBudgetTokens: sampling.thinking_budget }
+            : {}),
+        }
+      : sampling.thinking_mode === "disabled"
+        ? { thinkingEnabled: false }
+        : {}),
   };
 }
 

@@ -1,69 +1,159 @@
-# stateact-minimal 拓扑（对应旧 topology: stateact-minimal）
-# 与 legacyCompat 对旧 YAML 的转换结果等价：main 内部工具循环 + plan 外部化 +
-# 每轮 state 刷新；finish_gate 只读；gui 经 delegate.gui 委派。
+# stateact-minimal 拓扑（与 v1 experiments/stateact-minimal.yaml 对齐）
 experiment: stateact-minimal
+
+benchmark:
+  name: osworld-v2
+  release: osworld-v2-2026.06.24
+
+task_set: task-sets/smoke.yaml
+
+observation_capture:
+  require_a11y_tree: true
+  require_terminal: true
+
+context:
+  engine: pi-session
+  context_window: 200000
+  compaction:
+    strategy: m3-image-truncation
+    image_truncation:
+      screenshot_turns: 10
+      chunk_size: 20
+      placeholder: "Tool result: Success"
+
+trace:
+  llm_requests: true
+  include_images: false
+
+llm_retry:
+  max_retries: 2
+  max_retry_delay_ms: 60000
 
 models:
   main: anthropic/MiniMax-M3
   gui: anthropic/MiniMax-M3
   finish_gate: anthropic/MiniMax-M3
 
-llm_retry:
-  max_retries: 2
-  max_retry_delay_ms: 60000
+runtime:
+  num_envs: 1
 
 roles:
   main:
     backend: pi
     model: main
-    prompt: { system: prompts/roles/main-state-only.md }
-    observation: { allow: [state, user_response], deny: [screenshot, accessibility_tree] }
-    tools: [state.inspect, plan.update, delegate.gui, finish.request, fail.request, ask_user.request]
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/main-state-only.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [state, user_response]
+      deny: [screenshot, accessibility_tree]
+    context:
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
+    tools: [state.inspect, plan.update, delegate.gui, finish.request, fail.request]
     receives: [task, task_state]
-    message_style: state_text      # user 消息 = instruction/plan/terminal/user_response/step
-    interior_loop: true            # 单次 predict 内多次请求，直到终结工具或无工具调用
-    terminal_tools: [delegate.gui, finish, fail, ask_user]   # 解析后的工具名
-    plan_tool: plan.update         # plan 外部化，每轮注入
-    refresh_state: true            # 工具循环内每轮刷新最新 state 文本
+    message_style: state_text
+    interior_loop: true
+    terminal_tools: [delegate.gui, finish, fail, ask_user]
+    plan_tool: plan.update
+    refresh_state: true
     budget: { max_steps: 200 }
+
   gui:
     backend: pi
     model: gui
-    prompt: { system: prompts/roles/gui-specialist.md }
-    observation: { allow: [screenshot, accessibility_tree] }
-    context: { fresh_per_round: true }
-    tools: [computer.pyautogui, delegation.complete]
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/gui-specialist.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [screenshot, accessibility_tree]
+    context:
+      fresh_per_round: true
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
+    tools: [computer.pyautogui, state.view_image, delegation.complete]
     receives: [task, contract]
     interior_loop: true
     terminal_tools: [delegation.complete]
+
   finish_gate:
     backend: pi
     model: finish_gate
-    prompt: { system: prompts/roles/finish-gate.md }
-    observation: { allow: [state, terminal] }
-    context: { fresh_per_round: true }
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/finish-gate.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [state, terminal]
+    context:
+      fresh_per_round: true
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
     tools: [state.inspect_ro, finish_gate.verdict]
     receives: [task, contract, executor_report]
-    message_style: gate            # 只读 gate 观察（verbatim instruction + 工件检查提醒）
+    message_style: gate
     interior_loop: true
     terminal_tools: [finish_gate.verdict]
     read_only: enforce
     budget: { max_steps: 50 }
 
 delegations:
-  - { id: gui, from_role: main, tool: delegate.gui, to_role: gui,
-      terminal_tool: delegation.complete, fresh_context: true }
+  - id: gui
+    from_role: main
+    tool: delegate.gui
+    to_role: gui
+    terminal_tool: delegation.complete
+    fresh_context: true
+    max_turns: 50
 
 gates:
-  finish: { role: finish_gate, verdict_tool: finish_gate.verdict, fresh_context: true }
+  finish:
+    role: finish_gate
+    verdict_tool: finish_gate.verdict
+    fresh_context: true
 
 loop:
   driver: gate_verdict
   gate: finish
   feedback_to: main
   max_rounds: 3
-  total_rounds: 200
+  total_rounds: 500
   min_steps_before_finish: 3
+  on_gate_exhausted: blocked
 
 termination:
-  max_steps: 200
+  max_steps: 500
+  checkpoint_eval_mode: inline
+  checkpoint_steps: [150, 300]

@@ -14,6 +14,48 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 
+MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def _encode_image_bytes(raw: bytes) -> tuple[bytes, str]:
+    """Transcode screenshot bytes to the configured wire format (JPEG q90 by default)."""
+    image_format = os.environ.get("PI_OSWORLD_IMAGE_FORMAT", "JPEG").upper()
+    quality = int(os.environ.get("PI_OSWORLD_IMAGE_QUALITY", "90"))
+    mime = f"image/{image_format.lower()}"
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        image = Image.open(BytesIO(raw))
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        buf = BytesIO()
+        save_kwargs: Dict[str, Any] = {"format": image_format}
+        if image_format == "JPEG":
+            save_kwargs["quality"] = quality
+            save_kwargs["optimize"] = True
+        image.save(buf, **save_kwargs)
+        return buf.getvalue(), mime
+    except Exception:
+        return raw, _detect_image_mime(raw) or "image/png"
+
+
+def _detect_image_mime(raw: bytes) -> Optional[str]:
+    """Return the MIME type for real image bytes, or None for non-images."""
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if raw.startswith(b"RIFF") and raw[8:12] == b"WEBP":
+        return "image/webp"
+    if raw.startswith(b"BM"):
+        return "image/bmp"
+    return None
+
+
 class _ToolHttpHandler(BaseHTTPRequestHandler):
     """Serves VM tool calls from the Node bridge to the OSWorld controller."""
 
@@ -108,6 +150,13 @@ class PiOSWorldAgent:
         env = dict(os.environ)
         if self._tool_server_url:
             env["PI_OSWORLD_TOOL_SERVER"] = self._tool_server_url
+        if self.env is not None:
+            width = getattr(self.env, "screen_width", None)
+            height = getattr(self.env, "screen_height", None)
+            if width:
+                env["PI_OSWORLD_SCREEN_WIDTH"] = str(int(width))
+            if height:
+                env["PI_OSWORLD_SCREEN_HEIGHT"] = str(int(height))
         self._process = subprocess.Popen(
             command,
             stdin=subprocess.PIPE,
@@ -228,16 +277,23 @@ class PiOSWorldAgent:
             raw = controller.get_file(str(path))
             if raw is None:
                 return {"ok": False, "error": f"failed to read image: {path}", "output": ""}
+            mime = _detect_image_mime(raw)
+            if mime is None:
+                return {
+                    "ok": False,
+                    "error": f"not a supported image file: {path}",
+                    "output": "",
+                }
+            if len(raw) > MAX_IMAGE_BYTES:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"image too large: {len(raw)} bytes "
+                        f"(max {MAX_IMAGE_BYTES})"
+                    ),
+                    "output": "",
+                }
             import base64 as _b64
-            suffix = Path(str(path)).suffix.lower()
-            mime = {
-                ".png": "image/png",
-                ".jpg": "image/jpeg",
-                ".jpeg": "image/jpeg",
-                ".gif": "image/gif",
-                ".webp": "image/webp",
-                ".bmp": "image/bmp",
-            }.get(suffix, "image/png")
             return {
                 "ok": True,
                 "output": f"image bytes: {len(raw)}",
@@ -253,26 +309,125 @@ class PiOSWorldAgent:
         """Execute a computer.* action inside the VM through pyautogui."""
         if self.env is None:
             return {"ok": False, "error": "VM env not attached", "output": ""}
-        command = None
-        if name == "computer.click":
-            x = float(args.get("x", 0))
-            y = float(args.get("y", 0))
-            command = f"pyautogui.click({x}, {y})"
+
+        def modifiers_code(modifiers: str) -> tuple[str, str]:
+            keys = [k.strip().lower() for k in modifiers.split("+") if k.strip()]
+            down = "\n".join(f"pyautogui.keyDown({k!r})" for k in keys)
+            up = "\n".join(f"pyautogui.keyUp({k!r})" for k in reversed(keys))
+            return down, up
+
+        def wrap_modifiers(body: str, modifiers: str) -> str:
+            down, up = modifiers_code(modifiers)
+            return "\n".join(part for part in (down, body, up) if part)
+
+        def coord(x: Any, y: Any) -> tuple[int, int]:
+            """Map normalized [0,1000] coordinates to real screen pixels."""
+            width = int(getattr(self.env, "screen_width", None) or 1920)
+            height = int(getattr(self.env, "screen_height", None) or 1080)
+            px = round(float(x) * width / 1000)
+            py = round(float(y) * height / 1000)
+            return max(0, min(width, px)), max(0, min(height, py))
+
+        if name == "computer.screenshot":
+            try:
+                obs = self.env._get_obs()
+            except Exception as exc:  # noqa: BLE001 - surface observation failures
+                return {"ok": False, "error": f"failed to capture screenshot: {exc}", "output": ""}
+            raw = (obs or {}).get("screenshot")
+            if not raw:
+                return {"ok": False, "error": "no screenshot available", "output": ""}
+            raw, mime = _encode_image_bytes(raw)
+            import base64 as _b64
+            return {
+                "ok": True,
+                "output": f"screenshot bytes: {len(raw)}",
+                "error": "",
+                "image_b64": _b64.b64encode(raw).decode("ascii"),
+                "image_mime": mime,
+            }
+
+        if name in ("computer.done", "computer.fail"):
+            return {"ok": True, "output": "handled by flow", "error": ""}
+        if name == "computer.ask_user":
+            return {"ok": True, "output": str(args.get("question", "")), "error": ""}
+
+        command: Optional[str] = None
+        if name in (
+            "computer.click",
+            "computer.right_click",
+            "computer.middle_click",
+            "computer.double_click",
+            "computer.triple_click",
+        ):
+            x, y = coord(args.get("x", 0), args.get("y", 0))
+            pyautogui_fn = {
+                "computer.click": "click",
+                "computer.right_click": "rightClick",
+                "computer.middle_click": "middleClick",
+                "computer.double_click": "doubleClick",
+                "computer.triple_click": "tripleClick",
+            }[name]
+            body = f"pyautogui.{pyautogui_fn}({x}, {y})"
+            command = wrap_modifiers(body, str(args.get("modifiers", "")))
+        elif name == "computer.mouse_move":
+            x, y = coord(args.get("x", 0), args.get("y", 0))
+            duration = float(args.get("duration", 0.5))
+            command = f"pyautogui.moveTo({x}, {y}, duration={duration})"
+        elif name == "computer.drag":
+            x, y = coord(args.get("x", 0), args.get("y", 0))
+            duration = float(args.get("duration", 0.5))
+            lines = []
+            if args.get("start_x") is not None and args.get("start_y") is not None:
+                sx, sy = coord(args.get("start_x"), args.get("start_y"))
+                lines.append(f"pyautogui.moveTo({sx}, {sy}, duration={duration})")
+            lines.append(f"pyautogui.dragTo({x}, {y}, duration={duration})")
+            command = "\n".join(lines)
+        elif name in ("computer.mouse_down", "computer.mouse_up"):
+            fn = "mouseDown" if name == "computer.mouse_down" else "mouseUp"
+            if args.get("x") is not None and args.get("y") is not None:
+                x, y = coord(args.get("x"), args.get("y"))
+                command = f"pyautogui.{fn}({x}, {y})"
+            else:
+                command = f"pyautogui.{fn}()"
+        elif name == "computer.hold_key":
+            keys = [k.strip().lower() for k in str(args.get("key", "")).split("+") if k.strip()]
+            duration = float(args.get("duration", 1.0))
+            lines = [f"pyautogui.keyDown({k!r})" for k in keys]
+            lines.append(f"time.sleep({duration})")
+            lines.extend(f"pyautogui.keyUp({k!r})" for k in reversed(keys))
+            command = "\n".join(lines)
         elif name == "computer.type":
             text = str(args.get("text", ""))
             command = f"pyautogui.typewrite({text!r})"
         elif name == "computer.key":
-            key = str(args.get("key", ""))
-            command = f"pyautogui.press({key!r})"
+            keys = [k.strip().lower() for k in str(args.get("key", "")).split("+") if k.strip()]
+            command = (
+                f"pyautogui.hotkey({', '.join(repr(k) for k in keys)})"
+                if keys
+                else "pyautogui.sleep(0.1)"
+            )
         elif name == "computer.scroll":
-            clicks = int(args.get("clicks", 0))
-            command = f"pyautogui.scroll({clicks})"
+            direction = str(args.get("direction", "down"))
+            amount = int(args.get("amount", args.get("clicks", 1)))
+            signed = -amount if direction in ("down", "left") else amount
+            has_xy = args.get("x") is not None and args.get("y") is not None
+            sx, sy = coord(args.get("x", 0), args.get("y", 0))
+            if direction in ("left", "right"):
+                command = (
+                    f"pyautogui.hscroll({signed}, {sx}, {sy})"
+                    if has_xy
+                    else f"pyautogui.hscroll({signed})"
+                )
+            else:
+                command = (
+                    f"pyautogui.scroll({signed}, {sx}, {sy})"
+                    if has_xy
+                    else f"pyautogui.scroll({signed})"
+                )
         elif name == "computer.wait":
-            command = "time.sleep(0.5)"
-        elif name in ("computer.done", "computer.fail"):
-            return {"ok": True, "output": "handled by flow", "error": ""}
-        elif name == "computer.ask_user":
-            return {"ok": True, "output": str(args.get("question", "")), "error": ""}
+            duration = float(args.get("duration", 0.5))
+            command = f"time.sleep({duration})"
+
         if command is None:
             return {"ok": False, "error": f"unsupported computer tool: {name}", "output": ""}
         result = self.env.controller.execute_python_command(command)
@@ -404,11 +559,23 @@ class PiOSWorldAgent:
         encoded: Dict[str, Any] = {}
         screenshot = obs.get("screenshot")
         if screenshot is not None:
-            encoded["screenshot_b64"] = (
-                base64.b64encode(screenshot).decode("ascii")
-                if isinstance(screenshot, bytes)
-                else screenshot
+            # Keep the key in camelCase to match ObservationEnvelope in the
+            # Node bridge; snake_case caused screenshots to be silently dropped.
+            if isinstance(screenshot, str):
+                encoded["screenshotB64"] = screenshot
+                encoded["screenshotMime"] = "image/png"
+                screenshot = None
+        if screenshot is not None:
+            raw_bytes = (
+                screenshot if isinstance(screenshot, bytes) else bytes(screenshot)
             )
+            encoded_screenshot, screenshot_mime = _encode_image_bytes(raw_bytes)
+            encoded["screenshotB64"] = (
+                base64.b64encode(encoded_screenshot).decode("ascii")
+                if isinstance(encoded_screenshot, bytes)
+                else encoded_screenshot
+            )
+            encoded["screenshotMime"] = screenshot_mime
         accessibility_tree = obs.get("accessibility_tree")
         if accessibility_tree is not None:
             encoded["accessibility_tree"] = (
