@@ -10,6 +10,8 @@ const manifestPath = path.join(v2Root, "scripts", "legacy-manifest.json");
 interface ManifestEntry {
   v1: string;
   v2: string;
+  /** v2-only divergence: skip mirror equality (and sync must not overwrite). */
+  v2Only?: boolean;
 }
 
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as ManifestEntry[];
@@ -26,6 +28,10 @@ const v1Available =
 
 describe.skipIf(!v1Available)("legacy drift", () => {
   for (const entry of manifest) {
+    if (entry.v2Only) {
+      it.skip(`${entry.v1} intentionally diverged in v2 (${entry.v2})`, () => {});
+      continue;
+    }
     it(`${entry.v1} mirrors v2 ${entry.v2}`, () => {
       const expected = normalizeImports(
         readFileSync(path.join(v1Root, entry.v1), "utf8"),

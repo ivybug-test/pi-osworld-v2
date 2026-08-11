@@ -219,25 +219,14 @@ export class RoleAgent {
           };
         }
         await contextManager.append(
-          toolResultMessage(call.id, call.name, result.text, result.isError),
+          toolResultMessage(
+            call.id,
+            call.name,
+            result.text,
+            result.isError,
+            result.image,
+          ),
         );
-        if (result.image) {
-          await contextManager.append({
-            role: "user",
-            content: [
-              {
-                type: "image",
-                data: result.image.data,
-                mimeType: result.image.mimeType,
-              },
-              {
-                type: "text",
-                text: `image returned by ${call.name}`,
-              },
-            ],
-            timestamp: Date.now(),
-          });
-        }
         this.context.writer.event("tool.execute", {
           role: this.role,
           episode_id: input.episodeId,
@@ -347,12 +336,18 @@ export function toolResultMessage(
   toolName: string,
   text: string,
   isError = false,
+  image?: { mimeType: string; data: string },
 ): Message {
   return {
     role: "toolResult",
     toolCallId,
     toolName,
-    content: [{ type: "text", text }],
+    content: [
+      { type: "text", text },
+      ...(image
+        ? [{ type: "image" as const, data: image.data, mimeType: image.mimeType }]
+        : []),
+    ],
     isError,
     timestamp: Date.now(),
   };

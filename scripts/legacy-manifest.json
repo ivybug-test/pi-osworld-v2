@@ -1,5 +1,5 @@
 [
-  { "v1": "src/agents/role.ts", "v2": "src/agents/role.ts" },
+  { "v1": "src/agents/role.ts", "v2": "src/agents/role.ts", "v2Only": true },
   { "v1": "src/config/spec.ts", "v2": "src/legacy-config/spec.ts" },
   { "v1": "src/context/compaction.ts", "v2": "src/context/compaction.ts" },
   { "v1": "src/context/image-truncation.ts", "v2": "src/context/image-truncation.ts" },
@@ -10,7 +10,7 @@
   { "v1": "src/models/registry.ts", "v2": "src/models/registry.ts" },
   { "v1": "src/observation/router.ts", "v2": "src/observation/router.ts" },
   { "v1": "src/prompt/manager.ts", "v2": "src/prompt/manager.ts" },
-  { "v1": "src/subagents/role-subagent.ts", "v2": "src/subagents/role-subagent.ts" },
+  { "v1": "src/subagents/role-subagent.ts", "v2": "src/subagents/role-subagent.ts", "v2Only": true },
   { "v1": "src/subagents/types.ts", "v2": "src/subagents/types.ts" },
   { "v1": "src/telemetry/writer.ts", "v2": "src/telemetry/writer.ts" },
   { "v1": "src/actions/adapter.ts", "v2": "src/actions/adapter.ts" },

@@ -133,18 +133,14 @@ export class RoleSubagent implements Subagent {
       for (const call of executable) {
         const result = await this.executeTool(call);
         await agent.append(
-          toolResultMessage(call.id, call.name, result.text, result.isError),
+          toolResultMessage(
+            call.id,
+            call.name,
+            result.text,
+            result.isError,
+            result.image,
+          ),
         );
-        if (result.image) {
-          await agent.append({
-            role: "user",
-            content: [
-              { type: "image", data: result.image.data, mimeType: result.image.mimeType },
-              { type: "text", text: `image returned by ${call.name}` },
-            ],
-            timestamp: Date.now(),
-          });
-        }
         this.context.writer.event("subagent.tool.execute", {
           subagent: this.id,
           episode_id: input.episodeId,

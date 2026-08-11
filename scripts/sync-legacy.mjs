@@ -20,6 +20,10 @@ function rewriteImports(text) {
 }
 
 for (const entry of manifest) {
+  if (entry.v2Only) {
+    console.log(`skipped ${entry.v1} -> ${entry.v2} (v2-only divergence)`);
+    continue;
+  }
   const src = path.join(v1Root, entry.v1);
   const dst = path.join(v2Root, entry.v2);
   const text = rewriteImports(readFileSync(src, "utf8"));
