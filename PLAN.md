@@ -77,17 +77,16 @@ git submodule 形式引用官方仓库，实验配置树（experiments / task-se
 
 ## Phase F — 集群适配（详细计划见 CLUSTER-PLAN.md）
 
-目标：参考同事已跑通的集群流程，让 v2 在 Aliyun + OSS + parametrix 集群上跑实验。
-**不依赖同事仓库**：集群差异以 v2 自有模块 / 补丁维护，运行时只依赖官方
-OSWorld-V2 submodule + v2 自身代码。
+目标：先依赖同事 fork 作为 `external/OSWorld-V2` submodule 跑通 Aliyun + OSS +
+parametrix 集群实验；跑通后在 Phase F4 把集群增量收进 v2，换回官方 submodule。
 
 | # | 任务 | 验证 |
 |---|------|------|
-| F0 | v2 自持 `python/cluster/oss_results.py` + `patches/osworld-cluster.patch`；注册 `qwen-gateway` OpenAI provider；CLI 补 aliyun/use_public_ip/vnc/recording | `npm test` 通过；setup.sh 应用补丁幂等；本地 dry-run |
-| F1 | `python/run_v2_cluster.py` 单任务集群冒烟（stateact + m3） | score 与本地同配置量级一致；产物完整 |
+| F0 | submodule 换成 fork（pin `e189bb8`）；注册 `qwen-gateway` OpenAI provider；写 `run_v2_cluster.py`；本地 docker smoke | `npm test` 通过；本地 docker smoke 跑通 |
+| F1 | `run_v2_cluster.py` 单任务集群冒烟（stateact + m3） | score 与本地同配置量级一致；产物完整 |
 | F2 | worker 并行 + `get_unfinished` 断点 + `mirror_task_dir` OSS | 4 env 跑 meta_001_004 对拍 |
 | F3 | matrix/compare 集群化，输出对比报告 | 2 配置 x 2 任务集跑通 |
-| F4 | deploy/start/monitor 脚本 + 运行手册 | 一键部署与监控 |
+| F4 | 自包含迁移：OSS/补丁收进 v2，换回官方 submodule，score 对拍 | fork 阶段与自包含阶段 task 004 对拍一致 |
 
 **阶段验收**：`--provider-name aliyun` 下 stateact 与 m3 在集群跑通，结果可对比。
 

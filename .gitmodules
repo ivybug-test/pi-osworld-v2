@@ -1,3 +1,4 @@
 [submodule "external/OSWorld-V2"]
 	path = external/OSWorld-V2
-	url = https://github.com/xlang-ai/OSWorld-V2.git
+	url = https://github.com/moreC/OSWorld-V2.git
+	branch = dev/zhilongli
