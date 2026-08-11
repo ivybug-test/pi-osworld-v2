@@ -57,6 +57,24 @@
 
 ---
 
+## Phase E — 单仓自包含与迁移（之前遗漏，补录）
+
+目标：v2 作为**唯一主 git 仓库**，clone + setup 即可跑实验；OSWorld-V2 以
+git submodule 形式引用官方仓库，实验配置树（experiments / task-sets / prompts）
+并入 v2，VM 镜像与密钥不进 git。
+
+| # | 任务 | 验证 |
+|---|------|------|
+| E1 ✅ | 配置树迁移：`task-sets/smoke.yaml`、`experiments/m3-single.yaml`、`experiments/stateact-minimal.yaml` 并入 v2（prompts 已存在） | `--config-root .` 下 presets 与 experiments 都能加载 |
+| E2 ✅ | OSWorld-V2 作为 git submodule（`external/OSWorld-V2`），pin 到本地实测 HEAD，`--recursive` 初始化 `osworld-server` | `git submodule update --init --recursive` 后 import 通过 |
+| E3 ✅ | 新增 `.env.example`（MiniMax / qwen / OSWorld 运行参数），真实 `.env` gitignore | 模板可复制，无真实密钥入库 |
+| E4 ✅ | 新增 `scripts/setup.sh`：submodule init、npm install/build、.env 初始化、venv/VM 镜像检查 | 新目录跑 setup 后构建产物齐全 |
+| E5 ✅ | 去掉 `sync-legacy.mjs` 对 v1 路径的硬编码（必须显式传 `PI_OSWORLD_V1_ROOT`） | 无 v1 目录也能 clone/build/test |
+| E6 ✅ | 更新 README / PLAN 的运行命令与目录布局 | 命令从 v2 根目录可直接执行 |
+
+**阶段验收**：`git clone` v2 → `scripts/setup.sh` → 用 `presets/stateact.yaml` +
+`--config-root .` + `--osworld-root external/OSWorld-V2` 跑通 mock/dry-run。
+
 ## 时间量级（路径依赖）
 
 - Phase A：1–2 天（含消息对齐的逐字段核对）
@@ -82,3 +100,5 @@
 - [x] D3 debug mutate 持久化 `interventions.jsonl`（RecordingDebugger/CliDebugger 均落盘，单测覆盖）
 - [x] D4 matrix / compare / manifest：`run_v2.py` 启动写 `manifest.json`；
       `piosworld compare` 支持父目录枚举；`piosworld matrix` 展开并顺序执行 run_v2.py
+- [x] E1–E6 单仓自包含迁移：配置树并入、OSWorld-V2 submodule（pin v2026.06.24）、
+      `.env.example`、`scripts/setup.sh`、`run-smoke.sh`、去掉 v1 硬编码

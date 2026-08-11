@@ -5,7 +5,30 @@
 旧 `pi-osworld` 的 `RoleAgent`/`PiContextManager`/`RoleSubagent` 只 import 不重写，
 经 `src/legacy/imports.ts` 唯一通道接入。
 
-> 设计文档 `DESIGN-v2.md`；落地计划见 `PLAN.md`。
+> 设计文档 `DESIGN-v2.md`；落地计划见 `PLAN.md`（含 Phase E 单仓自包含迁移）。
+
+## 单仓自包含布局
+
+```text
+pi-osworld-v2/
+├── src/ python/ dist/           # 框架本体（dist 由 npm run build 生成，不入 git）
+├── presets/ experiments/ task-sets/ prompts/   # 实验配置树，自包含
+├── external/OSWorld-V2          # 官方 OSWorld-V2 git submodule（含 osworld-server）
+├── patches/                     # 对官方仓库的必要补丁（如 docker port lock）
+├── .env.example                 # 密钥模板，真实 .env 不入 git
+└── scripts/setup.sh             # 一键初始化
+```
+
+准备与运行：
+
+```bash
+git clone <repo> && cd pi-osworld-v2
+bash scripts/setup.sh             # submodule + npm install/build + .env + 资源检查
+# 编辑 .env 填入 ANTHROPIC_API_KEY 等
+
+# 本地 smoke / 真实验（config-root 指向仓库根，prompt/task-set 相对该根解析）
+/home/binqiu/OSWorld-V2/.venv/bin/python python/run_v2.py   --config presets/m3-single.yaml   --config-root .   --result-dir runs   --osworld-root external/OSWorld-V2   --provider-name docker   --max-steps 3
+```
 
 ## 已实现
 
@@ -26,20 +49,23 @@
 
 ```bash
 npm install
-npm test                  # 31 个单测（spec / legacy / piBackend / orchestrator / debugger）
+npm test                  # 单测（spec / legacy / piBackend / orchestrator / debugger / compare / matrix）
 npm run build
 
-# mock 冒烟（不调模型）
+# mock 冒烟（不调模型，config-root 指向仓库根）
 node_modules/.bin/tsx src/cli.ts run \
-  --config experiments/mea-demo.yaml --result-dir /tmp/piosworld-demo
+  --config experiments/mea-demo.yaml --root . --result-dir /tmp/piosworld-demo
 node_modules/.bin/tsx src/cli.ts run \
-  --config experiments/stateact-demo.yaml --result-dir /tmp/piosworld-sa
+  --config experiments/stateact-demo.yaml --root . --result-dir /tmp/piosworld-sa
 
-# pi 后端（真实模型）：需要 ANTHROPIC_BASE_URL / ANTHROPIC_API_KEY，
-# 以及 PI_OSWORLD_TOOL_SERVER（OSWorld VM tool server）
-node_modules/.bin/tsx src/cli.ts run \
-  --config /home/binqiu/osworld-experiments/experiments/stateact-minimal.yaml \
-  --backend pi --result-dir /tmp/piosworld-real
+# 真实验入口：run_v2.py 内部起 v2 serve + OSWorld VM
+# 首次先 bash scripts/setup.sh 初始化 external/OSWorld-V2 与 .env
+/home/binqiu/OSWorld-V2/.venv/bin/python python/run_v2.py \
+  --config presets/stateact.yaml \
+  --config-root . \
+  --result-dir runs \
+  --osworld-root external/OSWorld-V2 \
+  --provider-name docker
 ```
 
 CLI 选项：`--root <dir>`（prompt 相对路径基准，默认自动探测 config 目录/父目录）、
@@ -63,5 +89,6 @@ runs/<run_id>/
 - Phase B：环境层抽象 + read_only 执行层强制 + `serve` 命令（step 驱动 bridge）
 - Phase C：OSWorld-V2 复现闭环（task_004 分数对齐 0.6556）
 - Phase D：MEA 实跑 + IntegrityMonitor + debug 交互 + matrix/compare
+- Phase E：单仓自包含迁移（OSWorld-V2 submodule、配置树并入、setup.sh、.env.example）
 
 详见 `PLAN.md`。

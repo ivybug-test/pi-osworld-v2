@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 
 // Sync v1 legacy files into v2 (self-contained mirror).
-// Usage: PI_OSWORLD_V1_ROOT=/path/to/pi-osworld node scripts/sync-legacy.mjs
+// v1 冻结后不再默认依赖本机路径；必须显式指定 v1 根目录：
+//   PI_OSWORLD_V1_ROOT=/path/to/pi-osworld node scripts/sync-legacy.mjs
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const v2Root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const v1Root = process.env.PI_OSWORLD_V1_ROOT || process.argv[2] || "/home/binqiu/pi-osworld";
+const v1Root = process.env.PI_OSWORLD_V1_ROOT || process.argv[2];
+if (!v1Root) {
+  console.error(
+    "usage: PI_OSWORLD_V1_ROOT=/path/to/pi-osworld node scripts/sync-legacy.mjs",
+  );
+  process.exit(1);
+}
 const manifest = JSON.parse(
   readFileSync(path.join(v2Root, "scripts", "legacy-manifest.json"), "utf8"),
 );

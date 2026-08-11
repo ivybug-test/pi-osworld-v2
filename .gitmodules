@@ -1,0 +1,3 @@
+[submodule "external/OSWorld-V2"]
+	path = external/OSWorld-V2
+	url = https://github.com/xlang-ai/OSWorld-V2.git

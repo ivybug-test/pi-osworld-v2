@@ -1,0 +1,68 @@
+experiment: m3-single
+
+benchmark:
+  name: osworld-v2
+  release: osworld-v2-2026.06.24
+
+task_set: task-sets/smoke.yaml
+
+context:
+  engine: pi-session
+  context_window: 200000
+  compaction:
+    # M3-style deterministic image truncation: keep the most recent 10
+    # screenshots, drop older ones in chunks of 20, no LLM summary.
+    strategy: m3-image-truncation
+    image_truncation:
+      screenshot_turns: 10
+      chunk_size: 20
+      placeholder: "Tool result: Success"
+
+trace:
+  llm_requests: true
+  # 默认不落图片 base64，文件会小很多；需要完整 payload 时改成 true
+  include_images: false
+
+llm_retry:
+  # 与 stateact-minimal 保持一致：瞬时 429/5xx/网络错误最多重试 2 次
+  max_retries: 2
+  max_retry_delay_ms: 60000
+
+models:
+  # smoke 环境当前走 MiniMax 的 Anthropic-compatible 端点；换官方 API 时改成 anthropic/claude-opus-4-7
+  main: anthropic/MiniMax-M3
+
+runtime:
+  num_envs: 1
+
+topology: m3-single
+
+agents:
+  main:
+    model: main
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/m3-main.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [screenshot]
+    context:
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
+    tools:
+      - computer.pyautogui
+
+termination:
+  max_steps: 500
+  checkpoint_eval_mode: inline
+  checkpoint_steps: [150, 300]

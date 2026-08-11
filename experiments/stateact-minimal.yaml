@@ -1,0 +1,152 @@
+experiment: stateact-minimal
+
+benchmark:
+  name: osworld-v2
+  release: osworld-v2-2026.06.24
+
+task_set: task-sets/smoke.yaml
+
+observation_capture:
+  require_a11y_tree: true
+  require_terminal: true
+
+context:
+  engine: pi-session
+  context_window: 200000
+  compaction:
+    # Same screenshot window as M3: keep recent 10, drop in chunks of 20,
+    # never call an LLM summary from the harness.
+    strategy: m3-image-truncation
+    image_truncation:
+      screenshot_turns: 10
+      chunk_size: 20
+      placeholder: "Tool result: Success"
+
+trace:
+  llm_requests: true
+  # 默认不落图片 base64，文件会小很多；需要完整 payload 时改成 true
+  include_images: false
+
+llm_retry:
+  # 瞬时 429/5xx/网络错误最多重试 2 次；quota/billing 类错误不重试
+  max_retries: 2
+  max_retry_delay_ms: 60000
+
+models:
+  # 当前 smoke 只有 MiniMax 的 Anthropic-compatible 端点；换官方 API 时改成 anthropic/claude-opus-4-7 等
+  main: anthropic/MiniMax-M3
+  gui: anthropic/MiniMax-M3
+  finish_gate: anthropic/MiniMax-M3
+
+runtime:
+  num_envs: 1
+
+topology: stateact-minimal
+
+subagents:
+  gui:
+    role: gui
+    fresh_context: true
+    terminal_tool: delegation.complete
+
+agents:
+  main:
+    model: main
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/main-state-only.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [state, user_response]
+      deny: [screenshot, accessibility_tree]
+    context:
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    budget:
+      # Cap state.bash / state.python rounds inside one predict.
+      # StateAct 的 main 可以在单个 predict 内做多次内部请求；长任务容易
+      # 超过 20 轮，按论文预算放宽到 200。
+      max_steps: 200
+    memory: none
+    tools:
+      - state.inspect
+      - plan.update
+      - delegate.gui
+      - finish.request
+      - fail.request
+
+  gui:
+    model: gui
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/gui-specialist.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [screenshot, accessibility_tree]
+    context:
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
+    tools:
+      - computer.pyautogui
+      - state.view_image
+      - delegation.complete
+
+  finish_gate:
+    model: finish_gate
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/finish-gate.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [state, terminal]
+    context:
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
+    tools:
+      - state.inspect_ro
+      - finish_gate.verdict
+    budget:
+      # Gate 可能需要深度检查工件（读内部结构、渲染对比），20 轮容易打满
+      # 导致没有 verdict；按论文 subagent 上限放宽到 50。
+      max_steps: 50
+
+termination:
+  max_steps: 500
+  checkpoint_eval_mode: inline
+  checkpoint_steps: [150, 300]
+  require_finish_gate: true
+  finish_gate:
+    max_rounds: 3
+    min_steps_before_finish: 3
+  budget:
+    # Outer steps are 500 like M3; give the state-only main the same turn room.
+    max_main_turns: 500

@@ -509,6 +509,8 @@ def main() -> None:
 
     from dotenv import load_dotenv
 
+    # 自包含单仓：仓库根 .env 优先，osworld_root/.env 兜底
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
     load_dotenv(osworld_root / ".env")
 
     # Official task configs, proxy settings and cache paths are relative to the
