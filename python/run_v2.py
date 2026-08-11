@@ -396,6 +396,44 @@ def _raise_keyboard_interrupt(signum: int, frame: Any) -> None:
     raise KeyboardInterrupt
 
 
+
+
+def _write_run_manifest(
+    run_dir: str,
+    run_id: str,
+    experiment: Dict[str, Any],
+    topology: str,
+    task_set_ref: str,
+    task_ids: List[str],
+    max_steps: int,
+    num_envs: int,
+    args: argparse.Namespace,
+    osworld_root: str,
+) -> None:
+    """Write machine-readable run metadata for compare/matrix tooling."""
+    manifest = {
+        "run_id": run_id,
+        "experiment": experiment.get("experiment"),
+        "topology": topology,
+        "task_set": task_set_ref,
+        "tasks": task_ids,
+        "max_steps": max_steps,
+        "checkpoint_eval_mode": args.checkpoint_eval_mode,
+        "checkpoint_steps": args.checkpoint_steps,
+        "num_envs": num_envs,
+        "provider_name": args.provider_name,
+        "config": os.path.abspath(args.config),
+        "config_root": os.path.abspath(args.config_root),
+        "osworld_root": osworld_root,
+        "result_dir": os.path.abspath(run_dir),
+        "eval_version": args.eval_version,
+        "start_time": datetime.datetime.now().isoformat(timespec="seconds"),
+    }
+    manifest_path = os.path.join(run_dir, "manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as file_obj:
+        json.dump(manifest, file_obj, indent=2, ensure_ascii=False)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run pi-osworld experiments on OSWorld-V2")
     parser.add_argument("--config", required=True, help="Experiment YAML path")
@@ -413,6 +451,7 @@ def main() -> None:
     parser.add_argument("--os-type", default="Ubuntu")
     parser.add_argument("--sleep-after-execution", type=float, default=3.0)
     parser.add_argument("--max-steps", type=int, default=None, help="Override termination.max_steps from the experiment YAML")
+    parser.add_argument("--task-set", default=None, help="Override task_set from the experiment YAML")
     parser.add_argument("--num-envs", type=int, default=None, help="Number of parallel VM environments (default: runtime.num_envs in YAML, then 1)")
     parser.add_argument("--env-start-delay", type=float, default=1.0, help="Seconds to stagger worker startup")
     parser.add_argument(
@@ -482,7 +521,8 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
 
     experiment = _load_experiment(args.config, args.config_root)
-    task_ids = _load_tasks(args.config_root, experiment["task_set"])
+    task_set_ref = args.task_set or experiment["task_set"]
+    task_ids = _load_tasks(args.config_root, task_set_ref)
     # v2 spec 没有 topology 字段；用 loop.driver 作为目录名标识
     topology = (experiment.get("loop") or {}).get("driver", "self_report")
     logger.info(
@@ -515,6 +555,18 @@ def main() -> None:
     )
     run_dir = os.path.join(args.result_dir, run_id)
     os.makedirs(run_dir, exist_ok=True)
+    _write_run_manifest(
+        run_dir=run_dir,
+        run_id=run_id,
+        experiment=experiment,
+        topology=topology,
+        task_set_ref=task_set_ref,
+        task_ids=task_ids,
+        max_steps=max_steps,
+        num_envs=num_envs,
+        args=args,
+        osworld_root=str(osworld_root),
+    )
     attach_log_file(os.path.join(run_dir, "runner.log"))
     logger.info(
         "run_dir=%s max_steps=%s num_envs=%s checkpoint=%s/%s",

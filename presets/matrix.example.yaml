@@ -1,0 +1,7 @@
+# 用法：node dist/cli.js matrix --matrix presets/matrix.example.yaml --dry-run
+configs:
+  - presets/m3-single.yaml
+  - presets/stateact.yaml
+task_sets:
+  - task-sets/smoke.yaml
+runs: 1

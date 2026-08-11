@@ -19,6 +19,13 @@ import {
 } from "./engine/taskState.js";
 import { runServe } from "./serve.js";
 import { formatReplay, loadEvents, summarizeRounds } from "./replay.js";
+import { formatCompare, loadRunCompare } from "./compare.js";
+import {
+  expandMatrix,
+  formatMatrixPlan,
+  loadMatrix,
+  runMatrix,
+} from "./matrix.js";
 
 // ---------------------------------------------------------------------------
 // pi-osworld v2 CLI：run / serve / debug / replay
@@ -34,6 +41,11 @@ usage:
                   [--backend pi|mock] [--mock-script <yaml>]   # JSONL bridge（OSWorld step 驱动）
   piosworld debug <run-dir>
   piosworld replay <run-dir>
+  piosworld compare <run-dir> [<run-dir> ...]
+  piosworld matrix --matrix <matrix.yaml> [--dry-run]
+                  [--python <py>] [--config-root <dir>] [--result-dir <dir>]
+                  [--osworld-root <dir>] [--provider-name docker|aws|...]
+                  [--max-steps <n>] [--num-envs <n>]
 `);
 }
 
@@ -47,6 +59,15 @@ interface CliArgs {
   backend?: BackendId;
   mockScript?: string;
   interactive: boolean;
+  runDirs: string[];
+  matrixFile: string;
+  dryRun: boolean;
+  python: string;
+  configRoot: string;
+  osworldRoot: string;
+  providerName: string;
+  maxSteps?: number;
+  numEnvs?: number;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -57,10 +78,36 @@ function parseArgs(argv: string[]): CliArgs {
     task: "",
     resultDir: "runs",
     interactive: false,
+    runDirs: [],
+    matrixFile: "",
+    dryRun: false,
+    python: process.env.PI_OSWORLD_PYTHON ?? "python3",
+    configRoot: process.env.PIOSWORLD_CONFIG_ROOT ?? "",
+    osworldRoot: process.env.OSWORLD_ROOT ?? "/home/binqiu/OSWorld-V2",
+    providerName: "docker",
   };
   const rest = argv.slice(1);
   if (args.command === "debug" || args.command === "replay") {
     args.config = rest[0] ?? "";
+    return args;
+  }
+  if (args.command === "compare") {
+    args.runDirs = rest;
+    return args;
+  }
+  if (args.command === "matrix") {
+    for (let i = 0; i < rest.length; i += 1) {
+      const a = rest[i];
+      if (a === "--matrix") args.matrixFile = rest[++i] ?? "";
+      else if (a === "--dry-run") args.dryRun = true;
+      else if (a === "--python") args.python = rest[++i] ?? "";
+      else if (a === "--config-root") args.configRoot = rest[++i] ?? "";
+      else if (a === "--result-dir") args.resultDir = rest[++i] ?? "";
+      else if (a === "--osworld-root") args.osworldRoot = rest[++i] ?? "";
+      else if (a === "--provider-name") args.providerName = rest[++i] ?? "";
+      else if (a === "--max-steps") args.maxSteps = Number(rest[++i]);
+      else if (a === "--num-envs") args.numEnvs = Number(rest[++i]);
+    }
     return args;
   }
   for (let i = 0; i < rest.length; i += 1) {
@@ -203,6 +250,50 @@ async function cmdReplay(runDir: string): Promise<void> {
   process.stdout.write(`${formatReplay(summarizeRounds(events))}\n`);
 }
 
+async function cmdCompare(runDirs: string[]): Promise<void> {
+  if (runDirs.length === 0) {
+    usage();
+    process.exit(1);
+  }
+  const runs = runDirs.map((d) => loadRunCompare(path.resolve(d)));
+  process.stdout.write(`${formatCompare(runs)}\n`);
+  for (const run of runs) {
+    if (run.error) {
+      process.stderr.write(`[compare] ${run.runId}: ${run.error}\n`);
+    }
+  }
+}
+
+async function cmdMatrix(matrixPath: string, args: CliArgs): Promise<void> {
+  if (!matrixPath) {
+    usage();
+    process.exit(1);
+  }
+  const spec = loadMatrix(matrixPath);
+  const cells = expandMatrix(spec);
+  process.stdout.write(`${formatMatrixPlan(cells)}\n`);
+  if (!spec.runs || spec.runs < 1) {
+    process.stderr.write("[matrix] runs must be >= 1\n");
+    process.exit(1);
+  }
+  if (args.dryRun) return;
+  if (!args.configRoot) {
+    process.stderr.write(
+      "[matrix] --config-root is required to launch run_v2.py\n",
+    );
+    process.exit(1);
+  }
+  await runMatrix(matrixPath, {
+    python: args.python,
+    configRoot: path.resolve(args.configRoot),
+    resultDir: path.resolve(args.resultDir),
+    osworldRoot: path.resolve(args.osworldRoot),
+    providerName: args.providerName,
+    ...(args.maxSteps !== undefined ? { maxSteps: args.maxSteps } : {}),
+    ...(args.numEnvs !== undefined ? { numEnvs: args.numEnvs } : {}),
+  });
+}
+
 function writeJson(filePath: string, value: unknown): void {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
@@ -223,6 +314,10 @@ async function main(): Promise<void> {
     await cmdDebug(args.config);
   } else if (args.command === "replay") {
     await cmdReplay(args.config);
+  } else if (args.command === "compare") {
+    await cmdCompare(args.runDirs);
+  } else if (args.command === "matrix") {
+    await cmdMatrix(args.matrixFile, args);
   } else {
     usage();
     process.exit(1);
