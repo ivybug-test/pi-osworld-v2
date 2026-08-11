@@ -189,12 +189,12 @@ describe("message parity (A4)", () => {
     );
   });
 
-  it("isWriteTool blocks the same set as the old finish gate", () => {
+  it("isWriteTool blocks the full read-only write set (v2 strictness)", () => {
     expect(isWriteTool("state.bash")).toBe(true);
     expect(isWriteTool("state.write_file")).toBe(true);
     expect(isWriteTool("state.edit_file")).toBe(true);
+    expect(isWriteTool("state.python")).toBe(true);
     expect(isWriteTool("state.read_file")).toBe(false);
-    expect(isWriteTool("state.python")).toBe(false);
   });
 });
 

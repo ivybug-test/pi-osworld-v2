@@ -16,17 +16,19 @@ if _LEGACY_PYTHON_DIR not in sys.path:
     sys.path.insert(0, _LEGACY_PYTHON_DIR)
 
 import argparse
+import queue
 import datetime
 import json
 import os
 import signal
 import sys
+import time
+from multiprocessing import Manager, Process, current_process
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
 from pi_osworld_logging import add_logging_args, attach_log_file, get_logger, setup_logging
-from pi_osworld_adapter_v2 import PiOSWorldV2Agent
 
 
 def _normalize_task_id(task_id: str) -> str:
@@ -59,7 +61,157 @@ def _build_args(args: argparse.Namespace) -> SimpleNamespace:
         trace_guest=False,
         guest_trace_top_n=30,
         guest_trace_timeout=15,
+        provider_name=args.provider_name,
+        path_to_vm=args.path_to_vm,
+        headless=args.headless,
+        screen_width=args.screen_width,
+        screen_height=args.screen_height,
+        client_password=args.client_password,
+        snapshot_name=args.snapshot_name,
+        os_type=args.os_type,
     )
+
+
+def _run_one_task(
+    task_id: str,
+    run_args: SimpleNamespace,
+    shared_scores: List[Any],
+    topology: str,
+    require_a11y_tree: bool,
+    require_terminal: bool,
+    max_steps: int,
+    osworld_root: str,
+    config_path: str,
+    config_root: str,
+    test_config_base_dir: str,
+    eval_version: str,
+    run_id: str,
+) -> None:
+    """Run one task in a worker process with its own VM and v2 serve bridge."""
+    from desktop_env.desktop_env import DesktopEnv
+    from lib_run_single import run_single_example
+    from pi_osworld_adapter_v2 import PiOSWorldV2Agent
+    from task_loader import load_task_config, resolve_task_json_path
+
+    logger = get_logger()
+    example_dir = os.path.join(run_args.result_dir, topology, task_id)
+    os.makedirs(example_dir, exist_ok=True)
+    agent = None
+    env = None
+    try:
+        config_file = resolve_task_json_path(
+            task_id=task_id,
+            base_dir=test_config_base_dir,
+            eval_version=eval_version,
+        )
+        example = load_task_config(
+            config_file,
+            task_id=task_id,
+            base_dir=test_config_base_dir,
+            eval_version=eval_version,
+        )
+        logger.info(
+            "[%s] starting task %s -> %s",
+            current_process().name,
+            task_id,
+            example_dir,
+        )
+        agent = PiOSWorldV2Agent(
+            config_path=os.path.abspath(config_path),
+            root=config_root,
+            result_dir=run_args.result_dir,
+            episode_id=f"task-{task_id}",
+        )
+        env = DesktopEnv(
+            path_to_vm=run_args.path_to_vm
+            or str(Path(osworld_root) / "docker_vm_data" / "osworld-v2-ubuntu-x86.qcow2"),
+            action_space="pyautogui",
+            provider_name=run_args.provider_name,
+            snapshot_name=run_args.snapshot_name,
+            screen_size=(run_args.screen_width, run_args.screen_height),
+            headless=run_args.headless,
+            os_type=run_args.os_type,
+            require_a11y_tree=require_a11y_tree,
+            require_terminal=require_terminal,
+            enable_proxy=True,
+            client_password=run_args.client_password,
+            force_disable_vnc=True,
+            force_disable_recording=True,
+        )
+        agent.attach_env(env)
+        _record_owned_container(env, run_id, logger)
+        logger.info(
+            "[%s] running task %s with max_steps=%s",
+            current_process().name,
+            task_id,
+            max_steps,
+        )
+        run_single_example(
+            agent,
+            env,
+            example,
+            max_steps,
+            example["instruction"],
+            run_args,
+            example_dir,
+            shared_scores,
+        )
+        logger.info("[%s] task %s finished", current_process().name, task_id)
+    except Exception as exc:  # noqa: BLE001 - one task must not kill the worker
+        logger.exception("[%s] task %s failed: %s", current_process().name, task_id, exc)
+    finally:
+        if env is not None:
+            try:
+                env.close()
+                logger.info("[%s] environment closed", current_process().name)
+            except Exception as exc:  # noqa: BLE001 - teardown must not mask real errors
+                logger.warning("failed to close environment: %s", exc)
+        if agent is not None:
+            try:
+                agent.close()
+            except Exception as exc:  # noqa: BLE001 - teardown must not mask real errors
+                logger.warning("failed to stop pi-osworld bridge: %s", exc)
+
+
+def _run_env_tasks(
+    task_queue: Any,
+    run_args: SimpleNamespace,
+    shared_scores: List[Any],
+    topology: str,
+    require_a11y_tree: bool,
+    require_terminal: bool,
+    max_steps: int,
+    osworld_root: str,
+    config_path: str,
+    config_root: str,
+    test_config_base_dir: str,
+    eval_version: str,
+    run_id: str,
+) -> None:
+    """Worker loop: pull task ids from the shared queue until it drains."""
+    logger = get_logger()
+    logger.info("%s started.", current_process().name)
+    while True:
+        try:
+            task_id = task_queue.get(timeout=5)
+        except queue.Empty:
+            break
+        _run_one_task(
+            task_id,
+            run_args,
+            shared_scores,
+            topology,
+            require_a11y_tree,
+            require_terminal,
+            max_steps,
+            osworld_root,
+            config_path,
+            config_root,
+            test_config_base_dir,
+            eval_version,
+            run_id,
+        )
+    logger.info("%s finished its queue.", current_process().name)
 
 
 _CONTAINER_STATE_PATH = os.path.join(
@@ -261,6 +413,20 @@ def main() -> None:
     parser.add_argument("--os-type", default="Ubuntu")
     parser.add_argument("--sleep-after-execution", type=float, default=3.0)
     parser.add_argument("--max-steps", type=int, default=None, help="Override termination.max_steps from the experiment YAML")
+    parser.add_argument("--num-envs", type=int, default=None, help="Number of parallel VM environments (default: runtime.num_envs in YAML, then 1)")
+    parser.add_argument("--env-start-delay", type=float, default=1.0, help="Seconds to stagger worker startup")
+    parser.add_argument(
+        "--checkpoint-eval-mode",
+        choices=["off", "inline"],
+        default=None,
+        help="Override termination.checkpoint_eval_mode from the experiment YAML",
+    )
+    parser.add_argument(
+        "--checkpoint-steps",
+        type=str,
+        default=None,
+        help="Comma-separated logical steps for inline checkpoint evals, e.g. 150,300",
+    )
     parser.add_argument(
         "--clean-stale-containers",
         dest="clean_stale_containers",
@@ -311,12 +477,6 @@ def main() -> None:
     # so switch cwd before importing desktop_env / lib_run_single.
     os.chdir(osworld_root)
 
-    from desktop_env.desktop_env import DesktopEnv
-    from lib_run_single import run_single_example
-    from task_loader import load_task_config, resolve_task_json_path
-
-    from pi_osworld_adapter import PiOSWorldAgent
-
     if args.clean_stale_containers:
         _clean_stale_containers(args.provider_name, args.clean_stale_containers, logger)
     signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
@@ -335,6 +495,20 @@ def main() -> None:
     require_a11y_tree = bool(observation_capture.get("require_a11y_tree", False))
     require_terminal = bool(observation_capture.get("require_terminal", False))
     max_steps = args.max_steps or int(experiment.get("termination", {}).get("max_steps", 100))
+    termination = experiment.get("termination", {})
+    args.checkpoint_eval_mode = args.checkpoint_eval_mode or termination.get(
+        "checkpoint_eval_mode", "off"
+    )
+    if args.checkpoint_steps is None:
+        configured_steps = termination.get("checkpoint_steps")
+        if isinstance(configured_steps, list):
+            args.checkpoint_steps = ",".join(str(step) for step in configured_steps)
+        else:
+            args.checkpoint_steps = str(configured_steps or "")
+    runtime_config = experiment.get("runtime", {}) or {}
+    num_envs = args.num_envs or int(runtime_config.get("num_envs", 1))
+    num_envs = max(1, num_envs)
+    env_start_delay = max(0.0, float(args.env_start_delay))
     run_id = (
         f"{datetime.datetime.now():%Y%m%dT%H%M%S}-"
         f"{experiment['experiment']}-{topology}"
@@ -342,89 +516,90 @@ def main() -> None:
     run_dir = os.path.join(args.result_dir, run_id)
     os.makedirs(run_dir, exist_ok=True)
     attach_log_file(os.path.join(run_dir, "runner.log"))
-    logger.info("run_dir=%s max_steps=%s", run_dir, max_steps)
-
-    agent = None
+    logger.info(
+        "run_dir=%s max_steps=%s num_envs=%s checkpoint=%s/%s",
+        run_dir,
+        max_steps,
+        num_envs,
+        args.checkpoint_eval_mode,
+        args.checkpoint_steps,
+    )
     args.result_dir = run_dir
     run_args = _build_args(args)
 
-    interrupted = False
     try:
-        for task_id in task_ids:
-            example_dir = os.path.join(run_dir, topology, task_id)
-            os.makedirs(example_dir, exist_ok=True)
-            logger.info("starting task %s -> %s", task_id, example_dir)
-            if agent is not None:
-                agent.close()
-            agent = PiOSWorldV2Agent(
-                config_path=os.path.abspath(args.config),
-                root=args.config_root,
-                result_dir=run_dir,
-                episode_id=f"task-{task_id}",
-            )
-            config_file = resolve_task_json_path(
-                task_id=task_id,
-                base_dir=args.test_config_base_dir,
-                eval_version=args.eval_version,
-            )
-            example = load_task_config(
-                config_file,
-                task_id=task_id,
-                base_dir=args.test_config_base_dir,
-                eval_version=args.eval_version,
-            )
-
-            env = None
-            try:
-                env = DesktopEnv(
-                    path_to_vm=args.path_to_vm
-                    or str(osworld_root / "docker_vm_data" / "osworld-v2-ubuntu-x86.qcow2"),
-                    action_space="pyautogui",
-                    provider_name=args.provider_name,
-                    snapshot_name=args.snapshot_name,
-                    screen_size=(args.screen_width, args.screen_height),
-                    headless=args.headless,
-                    os_type=args.os_type,
-                    require_a11y_tree=require_a11y_tree,
-                    require_terminal=require_terminal,
-                    enable_proxy=True,
-                    client_password=args.client_password,
-                    force_disable_vnc=True,
-                    force_disable_recording=True,
-                )
-                agent.attach_env(env)
-                _record_owned_container(env, run_id, logger)
-                logger.info("running task %s with max_steps=%s", task_id, max_steps)
-                run_single_example(
-                    agent,
-                    env,
-                    example,
-                    max_steps,
-                    example["instruction"],
+        if num_envs == 1:
+            scores: List[Any] = []
+            for task_id in task_ids:
+                _run_one_task(
+                    task_id,
                     run_args,
-                    example_dir,
-                    [],
+                    scores,
+                    topology,
+                    require_a11y_tree,
+                    require_terminal,
+                    max_steps,
+                    str(osworld_root),
+                    os.path.abspath(args.config),
+                    args.config_root,
+                    args.test_config_base_dir,
+                    args.eval_version,
+                    run_id,
                 )
-                logger.info("task %s finished", task_id)
-            finally:
-                if env is not None:
-                    try:
-                        env.close()
-                        logger.info("environment closed")
-                    except Exception as exc:  # noqa: BLE001 - teardown must not mask the real error
-                        logger.warning("failed to close environment: %s", exc)
-    except KeyboardInterrupt:
-        interrupted = True
-        logger.warning("run interrupted; cleaning up")
-    finally:
-        if agent is not None:
+            return
+
+        with Manager() as manager:
+            shared_scores = manager.list()
+            task_queue = manager.Queue()
+            for task_id in task_ids:
+                task_queue.put(task_id)
+            processes = []
+            for index in range(num_envs):
+                process = Process(
+                    target=_run_env_tasks,
+                    args=(
+                        task_queue,
+                        run_args,
+                        shared_scores,
+                        topology,
+                        require_a11y_tree,
+                        require_terminal,
+                        max_steps,
+                        str(osworld_root),
+                        os.path.abspath(args.config),
+                        args.config_root,
+                        args.test_config_base_dir,
+                        args.eval_version,
+                        run_id,
+                    ),
+                    name=f"V2Env-{index + 1}",
+                )
+                process.daemon = True
+                process.start()
+                processes.append(process)
+                if env_start_delay > 0 and index < num_envs - 1:
+                    time.sleep(env_start_delay)
             try:
-                if interrupted:
-                    agent.terminate()
-                else:
-                    agent.close()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("failed to stop pi-osworld bridge: %s", exc)
+                while True:
+                    alive = [process for process in processes if process.is_alive()]
+                    if not alive and task_queue.empty():
+                        break
+                    if not alive:
+                        raise RuntimeError("all worker processes died")
+                    time.sleep(5)
+                for process in processes:
+                    process.join()
+            except KeyboardInterrupt:
+                logger.warning("run interrupted; terminating workers")
+                for process in processes:
+                    if process.is_alive():
+                        process.terminate()
+                for process in processes:
+                    process.join()
+                raise
+    except KeyboardInterrupt:
+        logger.warning("run interrupted; cleaning up")
+        raise
 
 
 if __name__ == "__main__":

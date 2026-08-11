@@ -89,10 +89,11 @@
 
 ### 6. 防漂移与后续开发
 
-- 建议加 `scripts/sync-legacy.sh` + drift 单测：镜像文件与 v1 不一致时测试失败，
-  以后 v1 有修改可一键同步。
+- 已加 `scripts/legacy-manifest.json` + `scripts/sync-legacy.mjs` + drift 单测：
+  镜像文件与 v1 不一致时 `npm test` 失败；v1 有修改时 `npm run sync:legacy` 一键同步。
 - v1 冻结后只开发 v2，继续执行现有 `PLAN.md` 的 Phase C/D：
   `run_v2.py`、task_004 复现、产物对齐、MEA / IntegrityMonitor / matrix。
+- 集群实验改造见 `CLUSTER-PLAN.md`。
 
 ## 决策点
 
@@ -117,4 +118,8 @@
   `legacyCompat` 支持当前 v1 YAML。
 - [x] 2026-08-11：`presets/m3-single.yaml` 与 `presets/stateact.yaml` 对齐 v1 配置，
   真实 prompts 已复制进 v2；mock 冒烟 m3 / stateact 均通过。
+- [x] 2026-08-11：`run_v2.py` 对齐 v1 runner（`num_envs` / checkpoint /
+  `shared_scores` / worker 重启）；PiBackend 修 `screenshotMime` 与
+  `state.python` 只读拦截；drift guard 单测 22 条通过。
+- [x] 2026-08-11：新增集群实验改造计划 `CLUSTER-PLAN.md`。
 - [ ] 待确认：task 004 真实运行对齐（v2 各跑一次 m3 / stateact）。

@@ -368,7 +368,7 @@ export class PiBackend implements BackendAdapter {
   ): UserMessage {
     const view = buildRoleView(role.observation, input.observation, "");
     const imageContent = input.observation.screenshotB64 && view.screenshot
-      ? [{ type: "image" as const, data: view.screenshot, mimeType: "image/png" }]
+      ? [{ type: "image" as const, data: view.screenshot, mimeType: input.observation.screenshotMime ?? "image/png" }]
       : [];
     const text = ((): string => {
       const base = (() => {
@@ -596,7 +596,7 @@ export function buildDelegatedTask(
 }
 
 export function isWriteTool(name: string): boolean {
-  return ["state.write_file", "state.edit_file", "state.bash"].includes(name);
+  return ["state.write_file", "state.edit_file", "state.bash", "state.python"].includes(name);
 }
 
 export function isStateMutatingTool(name: string): boolean {
