@@ -589,6 +589,58 @@ describe("Orchestrator drivers", () => {
     expect(delivered[0]).toContain("## Progress audit");
     expect(state?.audit?.feedback).toContain("## Progress audit");
   });
+
+  it("gate_verdict + audit_every: auditor 无报告时跳过并告警，不炸掉 main 本轮", async () => {
+    const spec = makeSpec({
+      models: { main: "m", finish_gate: "m", auditor: "m" },
+      roles: {
+        main: {
+          backend: "mock",
+          read_only: "none",
+          model: "main",
+          prompt: { system: "m.md" },
+          observation: { allow: ["state"] },
+          tools: ["state.bash"],
+          receives: ["task"],
+        },
+        finish_gate: {
+          backend: "mock",
+          model: "finish_gate",
+          prompt: { system: "g.md" },
+          observation: { allow: ["state"] },
+          tools: ["state.inspect_ro"],
+          receives: ["task", "contract", "executor_report"],
+          read_only: "enforce",
+        },
+        auditor: {
+          backend: "mock",
+          model: "auditor",
+          prompt: { system: "a.md" },
+          observation: { allow: ["state"] },
+          tools: ["state.inspect_ro"],
+          receives: ["task"],
+          read_only: "enforce",
+        },
+      },
+      gates: { finish: { role: "finish_gate", verdict_tool: "finish_gate.verdict", fresh_context: true } },
+      loop: { driver: "gate_verdict", gate: "finish", feedback_to: "main", max_rounds: 3, total_rounds: 6, audit_every: 1, audit_role: "auditor" },
+      state: { schema: ["requirements"], store: "memory", update_policy: "self_report" },
+    });
+    const { summary, events } = await run(spec, {
+      main: [
+        { type: "decision", decision: { kind: "done", reason: "finished" }, turns: 2 },
+      ],
+      finish_gate: { type: "verdict", accepted: true },
+      // auditor 返回普通 report（没有 auditReport）→ 审计失败
+      auditor: { type: "report", report: "boom" },
+    });
+    expect(summary.outcome.kind).toBe("done");
+    expect(events.some(([e]) => e === "round.audit_failed")).toBe(true);
+    // main 的轮次没有被 blocked
+    expect(
+      events.filter(([e, a]) => e === "round.decision" && a.outcome === "done"),
+    ).not.toHaveLength(0);
+  });
 });
 
 describe("audit evidence & main activity sources", () => {

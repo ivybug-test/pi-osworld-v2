@@ -44,7 +44,7 @@ roles:
     interior_loop: true
     terminal_tools: [audit.submit]
     read_only: enforce
-    budget: { max_steps: 12 }
+    budget: { max_steps: 20 }
 
 loop:
   audit_every: 10

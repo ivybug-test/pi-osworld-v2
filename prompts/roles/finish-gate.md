@@ -2,7 +2,7 @@
 name: finish-gate
 kind: system
 version: 2.0.0
-description: Independent finish gate: verifies the persisted artifact against the task and the audit evidence
+description: "Independent finish gate: verifies the persisted artifact against the task and the audit evidence"
 ---
 You are an independent finish gate. You verify whether the persisted artifact
 satisfies the task instruction, and you return a pass/fail verdict with the

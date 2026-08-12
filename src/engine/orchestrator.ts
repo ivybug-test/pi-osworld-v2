@@ -311,12 +311,31 @@ export class Orchestrator {
     }
     if (turn - this.auditLastTurns < loop.audit_every) return;
     const { runtime } = this.options;
-    const auditResult = await runtime.runRoleEpisode(loop.audit_role, ctx, obs);
-    const audit = auditResult.auditReport;
+    // 审计是 best-effort 监控：auditor 失败（超预算未提交 / 配置错误）只告警跳过，
+    // 不能把异常抛回 main 的 predict——否则整轮 main 的工作会被审计拖垮。
+    let audit: AuditReport | undefined;
+    try {
+      const auditResult = await runtime.runRoleEpisode(loop.audit_role, ctx, obs);
+      audit = auditResult.auditReport;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      runtime.emit("round.audit_failed", {
+        episodeId: ctx.episodeId,
+        round: ctx.index,
+        turn,
+        error: message,
+      });
+    }
     if (!audit) {
-      throw new Error(
-        `auditor role ${loop.audit_role} returned no audit report`,
-      );
+      runtime.emit("round.audit_failed", {
+        episodeId: ctx.episodeId,
+        round: ctx.index,
+        turn,
+        error: "auditor returned no audit report",
+      });
+      // 标记本轮已尝试审计，避免同轮每个 turn 都重试
+      this.auditLastTurns = turn;
+      return;
     }
     ctx.auditReport = audit;
     const feedback =
