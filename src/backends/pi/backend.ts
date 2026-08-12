@@ -341,6 +341,9 @@ export class PiBackend implements BackendAdapter {
           const nextGoals = Array.isArray(args.next_goals)
             ? args.next_goals.map(String).filter(Boolean)
             : [];
+          const verifiedFacts = Array.isArray(args.verified_facts)
+            ? args.verified_facts.map(String).filter(Boolean)
+            : [];
           this.emit("audit.submit", {
             episode_id: req.episodeId,
             step: req.roundIndex,
@@ -350,6 +353,7 @@ export class PiBackend implements BackendAdapter {
             contract_audit: contractAudit,
             gaps: Array.isArray(args.gaps) ? args.gaps.map(String) : [],
             next_goals: nextGoals,
+            verified_facts: verifiedFacts,
           });
           return {
             status: "done",
@@ -360,7 +364,10 @@ export class PiBackend implements BackendAdapter {
               completion,
               integrity,
               contractAudit,
-              verifiedFacts: [],
+              verifiedFacts: verifiedFacts.map((summary) => ({
+                reportId: `round-${req.roundIndex}`,
+                summary,
+              })),
               gaps: Array.isArray(args.gaps) ? args.gaps.map(String) : [],
               evidence: report ? [report] : [],
               ...(typeof args.feedback === "string" && args.feedback

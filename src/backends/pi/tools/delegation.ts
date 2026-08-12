@@ -25,8 +25,16 @@ export const completeDelegationTool: Tool = {
 
 export const finishTool: Tool = {
   name: "finish",
-  description: "Declare the task complete",
-  parameters: Type.Object({}),
+  description:
+    "Declare the task complete. Include a short completion summary of what you delivered (artifact path, key values, conflicts removed) — the finish gate may cross-reference it, but it verifies the persisted artifact directly.",
+  parameters: Type.Object({
+    report: Type.Optional(
+      Type.String({
+        description:
+          "Short completion summary of what was delivered and where (artifact path, key values, conflicts removed).",
+      }),
+    ),
+  }),
 };
 
 export const failTool: Tool = {
@@ -92,6 +100,14 @@ export const auditSubmitTool: Tool = {
         Type.String({
           description:
             "Checkable outcome goals for the next audit to verify one by one (for example: 'calendar.ics contains all 7 defense events with correct venue and time').",
+        }),
+      ),
+    ),
+    verified_facts: Type.Optional(
+      Type.Array(
+        Type.String({
+          description:
+            "Facts about the main agent's progress or deliverables that you confirmed by inspecting the environment (for example: 'Downloads contains the extracted xlsx' or 'calendar.ics already contains fyp20261 09:00 Main Building 101'). These feed the finish gate's cross-check.",
         }),
       ),
     ),

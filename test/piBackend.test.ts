@@ -69,6 +69,16 @@ describe("message parity (A4)", () => {
     const tools = resolveTools(["audit.submit"]);
     const tool = tools.find((t) => t.name === "audit.submit");
     expect(tool).toBeDefined();
-    expect(JSON.stringify(tool?.parameters)).toContain("next_goals");
+    const schema = JSON.stringify(tool?.parameters);
+    expect(schema).toContain("next_goals");
+    expect(schema).toContain("verified_facts");
+  });
+
+  it("finish tool schema requires a report so the executor report carries derived facts", () => {
+    const tools = resolveTools(["finish.request"]);
+    const tool = tools.find((t) => t.name === "finish");
+    expect(tool).toBeDefined();
+    const schema = JSON.stringify(tool?.parameters);
+    expect(schema).toContain("report");
   });
 });
