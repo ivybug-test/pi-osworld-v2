@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 
 SMOKE_DIR="${PIOSWORLD_SMOKE_DIR:-/tmp/piosworld-smoke}"
 rm -rf "$SMOKE_DIR"
-node_modules/.bin/tsx src/cli.ts run \
+node_modules/.bin/tsx src/cli/index.ts run \
   --config experiments/stateact-demo.yaml \
   --backend mock \
   --root . \

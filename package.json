@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "bin": {
-    "piosworld": "./dist/cli.js"
+    "piosworld": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli.ts",
+    "dev": "tsx src/cli/index.ts",
     "test": "vitest run",
     "sync:legacy": "node scripts/sync-legacy.mjs"
   },
