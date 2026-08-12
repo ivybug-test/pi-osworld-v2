@@ -95,17 +95,4 @@ describe("legacyCompat: 旧 agents/topology YAML → v2 HarnessSpec", () => {
     expect(spec.roles.main.budget).toEqual({ max_steps: 200 });
   });
 
-  it("加载用户真实旧 YAML（osworld-experiments）", () => {
-    const loaded = loadHarnessSpec(
-      "/home/binqiu/osworld-experiments/experiments/m3-single.yaml",
-    );
-    expect(loaded.legacy).toBe(true);
-    expect(loaded.spec.loop.driver).toBe("self_report");
-    const loaded2 = loadHarnessSpec(
-      "/home/binqiu/osworld-experiments/experiments/stateact-minimal.yaml",
-    );
-    expect(loaded2.legacy).toBe(true);
-    expect(loaded2.spec.loop.driver).toBe("gate_verdict");
-    expect(loaded2.spec.gates?.finish.role).toBe("finish_gate");
-  });
 });
