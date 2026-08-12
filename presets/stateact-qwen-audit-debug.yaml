@@ -40,11 +40,11 @@ roles:
         state.bash: deny
         state.write_file: deny
         state.edit_file: deny
-    receives: [task, task_state, audit_history, progress_snapshot, env_state]
+    receives: [task, task_state, audit_history, progress_snapshot, main_activity, env_state]
     interior_loop: true
     terminal_tools: [audit.submit]
     read_only: enforce
-    budget: { max_steps: 40 }
+    budget: { max_steps: 12 }
 
 loop:
   audit_every: 10

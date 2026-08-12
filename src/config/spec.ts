@@ -89,6 +89,8 @@ export const ReceivesSource = z.enum([
   "audit_history",
   "env_state",
   "progress_snapshot",
+  "main_activity",
+  "audit_evidence",
 ]);
 export type ReceivesSource = z.infer<typeof ReceivesSource>;
 

@@ -200,7 +200,17 @@ export class Orchestrator {
       obs,
       this.feedback,
       this.auditFeedback,
-      (turn, _cost, sink) => this.maybeRunAudit(ctx, obs, turn, sink),
+      (turn, _cost, sink, summary) => {
+        // 记录 main 活动日志（周期审计 main_activity 源读取）
+        if (summary) {
+          runtime.recordActivity(ctx.episodeId, {
+            turn,
+            text: summary.text,
+            tools: summary.tools,
+          });
+        }
+        return this.maybeRunAudit(ctx, obs, turn, sink);
+      },
     );
     if (result.feedbackDelivered === true) {
       this.auditFeedback = undefined;
@@ -330,15 +340,16 @@ export class Orchestrator {
       gaps: audit.gaps.length,
     });
     this.auditLastTurns = turn;
-    await runtime.writeState(ctx.episodeId, {
-      ...ctx.state,
-      audit: {
-        lastRound: ctx.index,
-        lastAuditTurns: turn,
-        report: audit,
-        feedback: block,
-      },
-    });
+    const auditState = {
+      lastRound: ctx.index,
+      lastAuditTurns: turn,
+      report: audit,
+      feedback: block,
+    };
+    // 同时更新 ctx.state：同 round 内后续审计（以及 appendRound 落盘）要能看到
+    // 本轮已产出的报告，才能对上轮 next_goals 做核对闭环。
+    ctx.state.audit = auditState;
+    await runtime.writeState(ctx.episodeId, { ...ctx.state, audit: auditState });
   }
 
   // -------------------------------------------------------------------------

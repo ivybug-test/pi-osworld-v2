@@ -5,6 +5,7 @@ import type { BackendAdapter } from "../backends/base.js";
 import type { Debugger } from "./debugger.js";
 import type { TaskStateStore } from "./taskState.js";
 import {
+  type ActivityEntry,
   type EpisodeRequest,
   type EpisodeResult,
   type ObservationEnvelope,
@@ -29,6 +30,7 @@ export function serializeSource(
   source: ReceivesSource,
   ctx: RoundContext,
   obs: ObservationEnvelope,
+  activity?: ActivityEntry[],
 ): string {
   const state = ctx.state;
   switch (source) {
@@ -50,19 +52,30 @@ export function serializeSource(
     }
     case "executor_report":
       return `## Executor report\n${ctx.executorReport ?? "(none)"}`;
-    case "audit_history":
-      return `## Audit history\n${
-        state.rounds.length
-          ? state.rounds
-              .map(
-                (r) =>
-                  `- round ${r.index}: ${r.auditReport?.completion ?? "?"}/${
-                    r.auditReport?.integrity ?? "?"
-                  }${r.auditReport ? ` (${r.auditReport.gaps.length} gaps)` : ""}`,
-              )
-              .join("\n")
-          : "- (none)"
-      }`;
+    case "audit_history": {
+      const lines = state.rounds.length
+        ? state.rounds.map(
+            (r) =>
+              `- round ${r.index}: ${r.auditReport?.completion ?? "?"}/${
+                r.auditReport?.integrity ?? "?"
+              }${r.auditReport ? ` (${r.auditReport.gaps.length} gaps)` : ""}`,
+          )
+        : ["- (none)"];
+      // 上轮审计的目标/反馈正文：auditor 需要据此逐条核对达成度
+      const latest = state.audit?.report;
+      if (latest) {
+        lines.push("");
+        lines.push(
+          `Latest audit (round ${state.audit?.lastRound ?? "?"}): ${latest.completion}/${latest.integrity}`,
+        );
+        if (latest.nextGoals?.length) {
+          lines.push("Goals from last audit (check each):");
+          lines.push(...latest.nextGoals.map((g) => `- ${g}`));
+        }
+        if (latest.feedback) lines.push(`feedback: ${latest.feedback.slice(0, 300)}`);
+      }
+      return `## Audit history\n${lines.join("\n")}`;
+    }
     case "env_state":
       return `## Environment state\n${
         obs.terminal ? `terminal:\n${obs.terminal}` : "(no terminal output)"
@@ -80,6 +93,40 @@ export function serializeSource(
         `latest round: ${last ? `${last.index} (decision ${last.decision.kind})` : "(none)"}`,
         `recent decisions: ${recentDecisions || "(none)"}`,
       ].join("\n");
+    }
+    case "main_activity": {
+      const entries = activity?.slice(-10) ?? [];
+      if (entries.length === 0) return "## Main activity\n- (none yet)";
+      return [
+        "## Main activity",
+        ...entries.map(
+          (e) =>
+            `- turn ${e.turn}: ${e.text}${
+              e.tools.length ? ` [tools: ${e.tools.join(", ")}]` : ""
+            }`,
+        ),
+      ].join("\n");
+    }
+    case "audit_evidence": {
+      const latest = state.audit?.report;
+      if (!latest) return "## Audit evidence\n- (none)";
+      const lines = [
+        "## Audit evidence",
+        `latest audit (round ${state.audit?.lastRound ?? "?"}): ${latest.completion}/${latest.integrity}`,
+      ];
+      if (latest.verifiedFacts.length) {
+        lines.push("verified facts:");
+        lines.push(...latest.verifiedFacts.map((f) => `- [${f.reportId}] ${f.summary}`));
+      }
+      if (latest.gaps.length) {
+        lines.push("gaps:");
+        lines.push(...latest.gaps.map((g) => `- ${g}`));
+      }
+      if (latest.nextGoals?.length) {
+        lines.push("goals for main:");
+        lines.push(...latest.nextGoals.map((g) => `- ${g}`));
+      }
+      return lines.join("\n");
     }
   }
 }
@@ -114,10 +161,11 @@ export function buildRoleMessage(
   ctx: RoundContext,
   obs: ObservationEnvelope,
   feedback?: string,
+  activity?: ActivityEntry[],
 ): string {
   const parts: string[] = [];
   for (const source of role.receives ?? defaultReceives(role)) {
-    parts.push(serializeSource(source, ctx, obs));
+    parts.push(serializeSource(source, ctx, obs, activity));
   }
   if (feedback) parts.push(`## Verifier feedback\n${feedback}`);
   // 周期审计反馈不拼进 user 消息：由 backend 的 FeedbackInjector 在每次模型调用前
@@ -150,6 +198,8 @@ export class Runtime implements RuntimeServices {
   private readonly emitFn?: (event: string, attrs: Record<string, unknown>) => void;
   private readonly root: string;
   private readonly observation: ObservationEnvelope;
+  /** per-episode main 活动日志（环形，审计 main_activity 源读取）。 */
+  private readonly activity = new Map<string, ActivityEntry[]>();
 
   constructor(options: RuntimeOptions) {
     this.spec = options.spec;
@@ -159,6 +209,12 @@ export class Runtime implements RuntimeServices {
     this.debugger = options.debugger;
     this.emitFn = options.emit;
     this.observation = options.observation ?? {};
+  }
+
+  recordActivity(episodeId: string, entry: ActivityEntry): void {
+    const entries = this.activity.get(episodeId) ?? [];
+    entries.push(entry);
+    this.activity.set(episodeId, entries.slice(-20));
   }
 
   emit(event: string, attrs: Record<string, unknown>): void {
@@ -191,7 +247,7 @@ export class Runtime implements RuntimeServices {
     const backend = this.backends[roleId];
     if (!backend) throw new Error(`no backend for role ${roleId}`);
     const system = loadPromptText(role.prompt.system, this.root);
-    const user = buildRoleMessage(role, ctx, obs, feedback);
+    const user = buildRoleMessage(role, ctx, obs, feedback, this.activity.get(ctx.episodeId));
     const req: EpisodeRequest = {
       episodeId: ctx.episodeId,
       role: roleId,

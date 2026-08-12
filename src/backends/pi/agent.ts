@@ -20,6 +20,7 @@ import {
   type PiModelClient,
 } from "./models/client.js";
 import type { ToolExecutionResult } from "./tools/executor.js";
+import type { TurnSummary } from "../../engine/types.js";
 import { resolvePrompt, type ResolvedPrompt } from "./prompt.js";
 
 export interface RoleAgentOptions {
@@ -40,10 +41,12 @@ export interface ToolLoopOptions {
   /** Cap on tool-call rounds inside one predict. Defaults to 20. */
   maxToolCalls?: number;
   transform?: (messages: Message[]) => Message[];
-  /** Called after every model completion; return false to stop the loop early. */
+  /** Called after every model completion; return false to stop the loop early.
+   *  第三个参数是该次调用的摘要（文本 + 工具名），供 orchestrator 记录活动日志。 */
   afterTurn?: (
     turn: number,
     costUsd: number,
+    summary?: TurnSummary,
   ) => boolean | void | Promise<boolean | void>;
 }
 
@@ -198,7 +201,16 @@ export class RoleAgent {
         cost_usd: assistant.usage.cost.total,
       });
 
-      if ((await options.afterTurn?.(this.turnCount, this.costUsd)) === false) {
+      if (
+        (await options.afterTurn?.(
+          this.turnCount,
+          this.costUsd,
+          {
+            text: summarizeAssistantText(assistant),
+            tools: assistantToolCalls(assistant).map((call) => call.name),
+          },
+        )) === false
+      ) {
         return assistant;
       }
 

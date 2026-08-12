@@ -83,6 +83,8 @@ export interface AuditReport {
   evidence: string[];
   /** 周期审计给 main 的简短可执行反馈（finish gate 不用）。 */
   feedback?: string;
+  /** 审计为下一阶段设定的可核验结果目标；下一次审计逐条核对 met/partial/unmet。 */
+  nextGoals?: string[];
 }
 
 export type ManagerDecision =
@@ -90,6 +92,19 @@ export type ManagerDecision =
   | { kind: "done"; reason?: string }
   | { kind: "blocked"; reason: string }
   | { kind: "ask"; question: string; answers?: string[] };
+
+/** 单次模型调用的摘要（供审计/活动日志使用，不进入模型上下文之外的地方）。 */
+export interface TurnSummary {
+  /** 该次调用的文本摘要（≤300 字）。 */
+  text: string;
+  /** 该次调用请求的工具名列表。 */
+  tools: string[];
+}
+
+/** main 活动日志条目（runtime 按 episode 维护，审计可见）。 */
+export interface ActivityEntry extends TurnSummary {
+  turn: number;
+}
 
 export type DecisionOutcome =
   | { kind: "execute" }
@@ -147,6 +162,7 @@ export interface EpisodeRequest {
     turn: number,
     costUsd: number,
     feedback?: FeedbackInjector,
+    summary?: TurnSummary,
   ) => boolean | void | Promise<boolean | void>;
 }
 
@@ -191,8 +207,11 @@ export interface RuntimeServices {
       turn: number,
       costUsd: number,
       feedback?: FeedbackInjector,
+      summary?: TurnSummary,
     ) => boolean | void | Promise<boolean | void>,
   ): Promise<EpisodeResult>;
+  /** 记录某个 episode 的 main 活动日志条目（周期审计读 main_activity 用）。 */
+  recordActivity(episodeId: string, entry: ActivityEntry): void;
   readState(episodeId: string): Promise<TaskState | undefined>;
   writeState(episodeId: string, state: TaskState): Promise<void>;
   /** 追加轮次记录并返回更新后的任务状态（用于 resume 与结果汇总）。 */

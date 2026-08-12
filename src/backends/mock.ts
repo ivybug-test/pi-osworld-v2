@@ -72,7 +72,16 @@ export class MockBackend implements BackendAdapter {
           (this.injectedFeedback[req.episodeId] ??= []).push(pending);
         }
         this.simTurns[req.role] = (this.simTurns[req.role] ?? 0) + 1;
-        const stop = await req.onTurn(this.simTurns[req.role], 0, injector);
+        const summaryText =
+          "report" in step && typeof step.report === "string"
+            ? step.report
+            : "mock action";
+        const stop = await req.onTurn(
+          this.simTurns[req.role],
+          0,
+          injector,
+          { text: summaryText, tools: [] },
+        );
         if (stop === false) break;
       }
     }
@@ -113,6 +122,7 @@ export const mockAudit = (
   integrity: AuditReport["integrity"] = "clean",
   gaps: string[] = [],
   evidence: string[] = [],
+  nextGoals: string[] = [],
 ): MockStep => ({
   type: "audit",
   report: `${completion} / ${integrity}`,
@@ -124,6 +134,7 @@ export const mockAudit = (
     verifiedFacts: [],
     gaps,
     evidence,
+    ...(nextGoals.length ? { nextGoals } : {}),
   },
 });
 

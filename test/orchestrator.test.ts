@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { HarnessSpec, type HarnessSpec as HarnessSpecT } from "../src/config/spec.js";
 import { MockBackend, mockAudit, mockDone, mockExecute } from "../src/backends/mock.js";
 import { Orchestrator } from "../src/engine/orchestrator.js";
-import { Runtime } from "../src/engine/runtime.js";
-import { MemoryTaskStateStore } from "../src/engine/taskState.js";
+import { Runtime, serializeSource } from "../src/engine/runtime.js";
+import { createTaskState, MemoryTaskStateStore } from "../src/engine/taskState.js";
 import { RecordingDebugger } from "../src/engine/debugger.js";
 import type { MockStep } from "../src/backends/mock.js";
+import type { RoundContext } from "../src/engine/types.js";
 
 function makeSpec(partial: Partial<HarnessSpecT>): HarnessSpecT {
   return HarnessSpec.parse({
@@ -356,7 +357,7 @@ describe("Orchestrator drivers", () => {
           prompt: { system: "a.md" },
           observation: { allow: ["state"] },
           tools: ["state.inspect_ro"],
-          receives: ["task", "task_state", "audit_history", "progress_snapshot", "env_state"],
+          receives: ["task", "task_state", "audit_history", "progress_snapshot", "main_activity", "env_state"],
           read_only: "enforce",
         },
       },
@@ -367,7 +368,7 @@ describe("Orchestrator drivers", () => {
     const { summary, dbg, store, backend } = await run(spec, {
       main: [mockExecute("work"), mockExecute("work"), mockDone("finished")],
       finish_gate: { type: "verdict", accepted: true },
-      auditor: mockAudit("incomplete", "clean", ["no artifact yet"]),
+      auditor: mockAudit("incomplete", "clean", ["no artifact yet"], [], ["open thunderbird"]),
     });
     expect(summary.outcome.kind).toBe("done");
     expect(summary.rounds).toBe(3);
@@ -381,6 +382,9 @@ describe("Orchestrator drivers", () => {
       expect(auditRuns[0].round).toBe(2);
       expect(auditRuns[0].req.user).toContain("## Progress snapshot");
       expect(auditRuns[0].req.user).toContain("rounds executed: 1");
+      // main 活动日志已喂给 auditor（不再是"什么都没看到"）
+      expect(auditRuns[0].req.user).toContain("## Main activity");
+      expect(auditRuns[0].req.user).toContain("turn 2");
     }
 
     // 审计在本轮 main 进行中（turn 2）触发：反馈不再拼进下一轮 main 的 user 消息，
@@ -420,6 +424,8 @@ describe("Orchestrator drivers", () => {
     expect(state?.audit?.lastRound).toBe(2);
     expect(state?.audit?.lastAuditTurns).toBe(2);
     expect(state?.audit?.feedback).toBeUndefined();
+    // next_goals 结构化持久化，供下一次审计逐条核对
+    expect(state?.audit?.report?.nextGoals).toEqual(["open thunderbird"]);
   });
 
   it("gate_verdict + audit_every: serve roundLimit=1 跨 predict 不重复注入", async () => {
@@ -541,7 +547,7 @@ describe("Orchestrator drivers", () => {
           prompt: { system: "a.md" },
           observation: { allow: ["state"] },
           tools: ["state.inspect_ro"],
-          receives: ["task", "task_state", "audit_history", "progress_snapshot", "env_state"],
+          receives: ["task", "task_state", "audit_history", "progress_snapshot", "main_activity", "env_state"],
           read_only: "enforce",
         },
       },
@@ -554,7 +560,7 @@ describe("Orchestrator drivers", () => {
         { type: "decision", decision: { kind: "done", reason: "finished" }, turns: 4 },
       ],
       finish_gate: { type: "verdict", accepted: true },
-      auditor: mockAudit("incomplete", "clean", ["no artifact yet"]),
+      auditor: mockAudit("incomplete", "clean", ["no artifact yet"], [], ["write calendar.ics"]),
     });
     expect(summary.outcome.kind).toBe("done");
     expect(summary.rounds).toBe(1);
@@ -564,15 +570,76 @@ describe("Orchestrator drivers", () => {
       (e) => e.type === "role.start" && e.role === "auditor",
     );
     expect(auditRuns).toHaveLength(2);
+    // 第二次审计（turn 4）应看到第一次审计（turn 2）留下的 next_goals，形成核对闭环
+    const secondAudit = auditRuns[1];
+    expect(secondAudit?.type === "role.start").toBe(true);
+    if (secondAudit?.type === "role.start") {
+      expect(secondAudit.req.user).toContain("Goals from last audit (check each):");
+      expect(secondAudit.req.user).toContain("- write calendar.ics");
+    }
     const state = await store.read("ep-1");
     expect(state?.audit?.lastAuditTurns).toBe(4);
     expect(state?.audit?.lastRound).toBe(1);
     expect(state?.rounds[0].auditReport?.completion).toBe("incomplete");
+    expect(state?.audit?.report?.nextGoals).toEqual(["write calendar.ics"]);
     // 同轮注入：turn 2 的反馈在 turn 3 模型调用前交付；turn 4 的反馈在 episode
     // 结束时仍待注入（缓冲未消费）→ 保留持久化，下一轮 seed 时再交付
     const delivered = backend.injectedFeedback["ep-1"] ?? [];
     expect(delivered).toHaveLength(1);
     expect(delivered[0]).toContain("## Progress audit");
     expect(state?.audit?.feedback).toContain("## Progress audit");
+  });
+});
+
+describe("audit evidence & main activity sources", () => {
+  const state = createTaskState("do the thing", ["requirements"]);
+  state.audit = {
+    lastRound: 1,
+    lastAuditTurns: 5,
+    report: {
+      roundId: "round-1",
+      completion: "incomplete",
+      integrity: "clean",
+      contractAudit: "aligned",
+      verifiedFacts: [],
+      gaps: ["no artifact yet"],
+      evidence: [],
+      nextGoals: ["open thunderbird", "parse xlsx"],
+      feedback: "open thunderbird",
+    },
+    feedback: "## Progress audit\nopen thunderbird",
+  };
+  const ctx: RoundContext = { episodeId: "ep-1", index: 1, state };
+
+  it("main_activity 序列化最近 turn（工具名+文本）", () => {
+    const out = serializeSource("main_activity", ctx, {}, [
+      { turn: 1, text: "locate state", tools: ["state.bash"] },
+      { turn: 2, text: "parsed xlsx, found 7 defenses", tools: ["state.python"] },
+    ]);
+    expect(out).toContain("## Main activity");
+    expect(out).toContain("- turn 1: locate state [tools: state.bash]");
+    expect(out).toContain("- turn 2: parsed xlsx, found 7 defenses [tools: state.python]");
+  });
+
+  it("main_activity 空时显示 (none yet)", () => {
+    expect(serializeSource("main_activity", ctx, {})).toContain("(none yet)");
+  });
+
+  it("audit_history 包含上轮 goals/feedback 正文（auditor 据此核对达成度）", () => {
+    const out = serializeSource("audit_history", ctx, {});
+    expect(out).toContain("Goals from last audit (check each):");
+    expect(out).toContain("- open thunderbird");
+    expect(out).toContain("- parse xlsx");
+    expect(out).toContain("feedback: open thunderbird");
+  });
+
+  it("audit_evidence 把 verified facts/gaps/goals 提供给 finish gate", () => {
+    const out = serializeSource("audit_evidence", ctx, {});
+    expect(out).toContain("## Audit evidence");
+    expect(out).toContain("latest audit (round 1): incomplete/clean");
+    expect(out).toContain("gaps:");
+    expect(out).toContain("- no artifact yet");
+    expect(out).toContain("goals for main:");
+    expect(out).toContain("- open thunderbird");
   });
 });

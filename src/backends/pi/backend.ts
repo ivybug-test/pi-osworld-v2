@@ -166,8 +166,8 @@ export class PiBackend implements BackendAdapter {
                     injector,
                   )
               : undefined,
-          afterTurn: async (turn, costUsd) => {
-            const stop = await req.onTurn?.(turn, costUsd, injector);
+          afterTurn: async (turn, costUsd, summary) => {
+            const stop = await req.onTurn?.(turn, costUsd, injector, summary);
             // 无 transform 的角色（refresh_state 关闭）：直接把缓冲追加成一条
             // user 消息，保证同轮反馈在下一次模型调用前可见。
             if (role.refresh_state !== true && injector.hasPending) {
@@ -338,6 +338,9 @@ export class PiBackend implements BackendAdapter {
                 ? "needs_revision"
                 : "aligned";
           const report = assistantTextForArgs(call.arguments);
+          const nextGoals = Array.isArray(args.next_goals)
+            ? args.next_goals.map(String).filter(Boolean)
+            : [];
           this.emit("audit.submit", {
             episode_id: req.episodeId,
             step: req.roundIndex,
@@ -346,6 +349,7 @@ export class PiBackend implements BackendAdapter {
             integrity,
             contract_audit: contractAudit,
             gaps: Array.isArray(args.gaps) ? args.gaps.map(String) : [],
+            next_goals: nextGoals,
           });
           return {
             status: "done",
@@ -362,6 +366,7 @@ export class PiBackend implements BackendAdapter {
               ...(typeof args.feedback === "string" && args.feedback
                 ? { feedback: args.feedback }
                 : {}),
+              ...(nextGoals.length ? { nextGoals } : {}),
             },
           };
         }
