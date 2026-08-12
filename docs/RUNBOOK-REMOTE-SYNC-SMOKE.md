@@ -104,3 +104,14 @@ su zhilongli -c 'cd /home/zhilongli/OSWorld-V2 && \
   报 permission denied。
 - 避免：bundle 直接生成/复制到 zhilongli 家目录（如 `/home/zhilongli/`）并
   `chown zhilongli:zhilongli`，再 `su zhilongli -c "git fetch <bundle> main && git merge --ff-only FETCH_HEAD"`。
+
+## 坑 10：冒烟失败留下的孤儿 ECS 实例怎么清（2026-08-12）
+
+- 现象：两次失败冒烟（坑 6、坑 7）各留了一台 `OSWorld-Desktop-*` worker 实例，discard 时
+  报 `IncorrectInstanceStatus.Initializing` 删不掉；之后实例变 Running，TTL 180min 才会自动释放。
+  监控页 `http://<master>:8090/api/instances` 只读，没有释放接口。
+- 清理：用仓库同款 SDK + `.env` 凭据直接 `DeleteInstances`（force=True），删除成功返回 200。
+- 注意：本仓库 venv 里 `alibabacloud_ecs20140526` 的 `DeleteInstancesRequest` 字段是
+  `instance_id=[...]`（List[str]），不是 `instance_ids=UtilClient.to_jsonstring(...)`——
+  manager.py 那套写法在本 venv 会 `TypeError`，别照抄。
+- 避免：失败后尽快手动清，别等 TTL；脚本用完即删（含 AK/SK 的 .env 别外传）。
