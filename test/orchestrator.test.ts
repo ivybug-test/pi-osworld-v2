@@ -87,7 +87,7 @@ async function run(spec: HarnessSpecT, behaviors: Record<string, MockStep[] | Mo
     episodeId: "ep-1",
     task: "do the thing",
   });
-  return { summary, dbg, events, store };
+  return { summary, dbg, events, store, backend };
 }
 
 describe("Orchestrator drivers", () => {
@@ -364,7 +364,7 @@ describe("Orchestrator drivers", () => {
       loop: { driver: "gate_verdict", gate: "finish", feedback_to: "main", max_rounds: 3, total_rounds: 6, audit_every: 2, audit_role: "auditor" },
       state: { schema: ["requirements"], store: "memory", update_policy: "self_report" },
     });
-    const { summary, dbg, store } = await run(spec, {
+    const { summary, dbg, store, backend } = await run(spec, {
       main: [mockExecute("work"), mockExecute("work"), mockDone("finished")],
       finish_gate: { type: "verdict", accepted: true },
       auditor: mockAudit("incomplete", "clean", ["no artifact yet"]),
@@ -383,8 +383,9 @@ describe("Orchestrator drivers", () => {
       expect(auditRuns[0].req.user).toContain("rounds executed: 1");
     }
 
-    // 审计在本轮 main 进行中触发，反馈注入下一轮（round 3）main 消息；
-    // round 1/2 无审计反馈
+    // 审计在本轮 main 进行中（turn 2）触发：反馈不再拼进下一轮 main 的 user 消息，
+    // 而是经 FeedbackInjector 注入上下文。round 2 在审计触发的同一 turn 结束
+    // （缓冲未消费），反馈 seed 到 round 3 的 episode 缓冲并在首次模型调用前交付。
     const secondMain = dbg.events.find(
       (e) => e.type === "role.start" && e.role === "main" && e.round === 2,
     );
@@ -404,15 +405,21 @@ describe("Orchestrator drivers", () => {
     );
     expect(thirdMain).toBeDefined();
     if (thirdMain?.type === "role.start") {
-      expect(thirdMain.req.user).toContain("## Progress audit");
-      expect(thirdMain.req.user).toContain("no artifact yet");
+      expect(thirdMain.req.user).not.toContain("## Progress audit");
     }
+    // 注入缓冲记录：round 3 首次模型调用前交付审计反馈（含 header）
+    const delivered = backend.injectedFeedback["ep-1"] ?? [];
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toContain("## Progress audit");
+    expect(delivered[0]).toContain("no artifact yet");
 
-    // 审计报告挂在 round 2 轮次记录，并持久化到 state.audit
+    // 审计报告挂在 round 2 轮次记录，并持久化到 state.audit；
+    // round 3 消费后清除持久化字段（避免 serve 下一 predict 重复注入）
     const state = await store.read("ep-1");
     expect(state?.rounds[1].auditReport?.completion).toBe("incomplete");
     expect(state?.audit?.lastRound).toBe(2);
     expect(state?.audit?.lastAuditTurns).toBe(2);
+    expect(state?.audit?.feedback).toBeUndefined();
   });
 
   it("gate_verdict + audit_every: serve roundLimit=1 跨 predict 不重复注入", async () => {
@@ -482,7 +489,9 @@ describe("Orchestrator drivers", () => {
     const s3 = await orch.runEpisode({ episodeId: "ep-1", task: "do the thing", roundLimit: 1 });
     expect(s3.outcome).toEqual({ kind: "done" });
     expect(s3.state.rounds.length).toBe(3);
-    // round 2 内（turn 2）触发审计 → 反馈注入 round 3 main；消费后清除持久化字段
+    // round 2 内（turn 2）触发审计：round 2 的 episode 在审计触发的同一 turn 结束，
+    // 缓冲未消费 → 持久化保留；round 3 predict 开始时 seed 进新缓冲，首次模型调用前
+    // 交付一次，消费后清除持久化字段 → 全程只注入一次（不重复）。
     const round2Main = dbg.events.find(
       (e) => e.type === "role.start" && e.role === "main" && e.round === 2,
     );
@@ -495,9 +504,12 @@ describe("Orchestrator drivers", () => {
     );
     expect(round3Main).toBeDefined();
     if (round3Main?.type === "role.start") {
-      expect(round3Main.req.user).toContain("## Progress audit");
-      expect(round3Main.req.user).toContain("no artifact yet");
+      expect(round3Main.req.user).not.toContain("## Progress audit");
     }
+    const delivered = backend.injectedFeedback["ep-1"] ?? [];
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toContain("## Progress audit");
+    expect(delivered[0]).toContain("no artifact yet");
     expect(s3.state.audit?.feedback).toBeUndefined();
   });
 
@@ -537,7 +549,7 @@ describe("Orchestrator drivers", () => {
       loop: { driver: "gate_verdict", gate: "finish", feedback_to: "main", max_rounds: 3, total_rounds: 6, audit_every: 2, audit_role: "auditor" },
       state: { schema: ["requirements"], store: "memory", update_policy: "self_report" },
     });
-    const { summary, dbg, store } = await run(spec, {
+    const { summary, dbg, store, backend } = await run(spec, {
       main: [
         { type: "decision", decision: { kind: "done", reason: "finished" }, turns: 4 },
       ],
@@ -556,5 +568,11 @@ describe("Orchestrator drivers", () => {
     expect(state?.audit?.lastAuditTurns).toBe(4);
     expect(state?.audit?.lastRound).toBe(1);
     expect(state?.rounds[0].auditReport?.completion).toBe("incomplete");
+    // 同轮注入：turn 2 的反馈在 turn 3 模型调用前交付；turn 4 的反馈在 episode
+    // 结束时仍待注入（缓冲未消费）→ 保留持久化，下一轮 seed 时再交付
+    const delivered = backend.injectedFeedback["ep-1"] ?? [];
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toContain("## Progress audit");
+    expect(state?.audit?.feedback).toContain("## Progress audit");
   });
 });

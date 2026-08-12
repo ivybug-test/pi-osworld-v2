@@ -1,4 +1,5 @@
 import type { HarnessSpec } from "../config/spec.js";
+import type { FeedbackInjector } from "./feedback.js";
 
 // ---------------------------------------------------------------------------
 // engine 核心类型：任务状态 / 契约 / 审计报告 / 轮次
@@ -139,8 +140,14 @@ export interface EpisodeRequest {
   feedback?: string;
   /** 最近一次周期审计反馈（注入 feedback_to 角色消息；独立于 finish gate 的拒绝反馈）。 */
   auditFeedback?: string;
-  /** main 角色 interior loop 内每完成一次模型调用回调（turn 基周期审计钩子）。 */
-  onTurn?: (turn: number, costUsd: number) => boolean | void | Promise<boolean | void>;
+  /** main 角色 interior loop 内每完成一次模型调用回调（turn 基周期审计钩子）。
+   *  第三个参数是 backend 创建的反馈注入缓冲：生产方（周期审计/verifier）offer 文本，
+   *  消费方会在下一次模型调用前取走并合入角色上下文（同轮注入）。 */
+  onTurn?: (
+    turn: number,
+    costUsd: number,
+    feedback?: FeedbackInjector,
+  ) => boolean | void | Promise<boolean | void>;
 }
 
 export interface EpisodeResult {
@@ -153,6 +160,9 @@ export interface EpisodeResult {
   auditReport?: AuditReport;
   verdict?: { accepted: boolean; feedback?: string };
   metadata?: Record<string, unknown>;
+  /** 反馈注入缓冲在 episode 结束时已清空（同轮注入成功）；orchestrator 据此清除
+   *  持久化的待注入反馈，避免下轮/下次 predict 重复注入。未设置视为未消费。 */
+  feedbackDelivered?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +187,11 @@ export interface RuntimeServices {
     obs: ObservationEnvelope,
     feedback?: string,
     auditFeedback?: string,
-    onTurn?: (turn: number, costUsd: number) => boolean | void | Promise<boolean | void>,
+    onTurn?: (
+      turn: number,
+      costUsd: number,
+      feedback?: FeedbackInjector,
+    ) => boolean | void | Promise<boolean | void>,
   ): Promise<EpisodeResult>;
   readState(episodeId: string): Promise<TaskState | undefined>;
   writeState(episodeId: string, state: TaskState): Promise<void>;

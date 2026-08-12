@@ -95,8 +95,11 @@ loop:
   routing: { gui: gui_executor, cli: executor }   # 契约 target 路由
   # driver=gate_verdict 时：
   verdict: { gate: finish, feedback_to: main, max_rounds: 3 }
-  audit_every: 10                   # 周期进度审计：每隔 N 轮跑一次（可选）
+  audit_every: 10                   # 周期进度审计：每隔 N 次 main 模型调用（turn）跑一次（可选）
   audit_role: auditor               # 周期审计角色 id（read_only 角色，可选）
+                                    # 审计反馈经 FeedbackInjector 同轮注入：生产方
+                                    # （orchestrator）offer，backend 在下一次模型调用前
+                                    # 合入 feedback_to 角色上下文，消费后清除持久化避免重复
 
 termination:
   on: [done, blocked, ask, max_rounds, timeout]

@@ -24,6 +24,7 @@ import {
   type ToolExecutionResult,
 } from "./index.js";
 import { buildLegacyFlowContext } from "./compat.js";
+import { FeedbackInjector } from "../../engine/feedback.js";
 import { policyForRole } from "../../primitives/permission.js";
 
 // ---------------------------------------------------------------------------
@@ -132,7 +133,13 @@ export class PiBackend implements BackendAdapter {
     const turnsBefore = agent.turns;
     let liveObs = input.observation;
 
+    // 同轮反馈注入缓冲：round 开始时用持久化的待注入反馈 seed（serve 跨 predict
+    // 兜底），round 中途由 orchestrator 经 onTurn 的 sink offer；每次模型调用前消费。
+    const injector = new FeedbackInjector();
+    if (req.auditFeedback) injector.offer(req.auditFeedback);
+
     let assistant;
+    let feedbackDelivered = false;
     try {
       assistant = await agent.stepUntilDecision(
         input,
@@ -150,11 +157,28 @@ export class PiBackend implements BackendAdapter {
           transform:
             role.refresh_state === true
               ? (messages) =>
-                  this.refreshStateText(messages, req, input, liveObs, session.plan)
+                  this.refreshStateText(
+                    messages,
+                    req,
+                    input,
+                    liveObs,
+                    session.plan,
+                    injector,
+                  )
               : undefined,
-          afterTurn: req.onTurn,
+          afterTurn: async (turn, costUsd) => {
+            const stop = await req.onTurn?.(turn, costUsd, injector);
+            // 无 transform 的角色（refresh_state 关闭）：直接把缓冲追加成一条
+            // user 消息，保证同轮反馈在下一次模型调用前可见。
+            if (role.refresh_state !== true && injector.hasPending) {
+              const pending = injector.takePending();
+              if (pending) await agent.append(feedbackUserMessage(pending));
+            }
+            return stop ?? undefined;
+          },
         },
       );
+      feedbackDelivered = !injector.hasPending;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.emit("pi.loop_exhausted", {
@@ -166,6 +190,7 @@ export class PiBackend implements BackendAdapter {
         status: "done",
         report: message,
         decision: { kind: "blocked", reason: message },
+        feedbackDelivered: !injector.hasPending,
       };
     }
 
@@ -174,7 +199,7 @@ export class PiBackend implements BackendAdapter {
     const terminalCall = calls.find((call) => terminal.has(call.name));
     if (terminalCall) {
       session.nonFinishTurns += Math.max(0, turnsDelta - 1);
-      return this.classifyTerminal(
+      const result = await this.classifyTerminal(
         role,
         req,
         agent,
@@ -183,12 +208,14 @@ export class PiBackend implements BackendAdapter {
         session,
         liveObs,
       );
+      return { ...result, feedbackDelivered };
     }
     session.nonFinishTurns += turnsDelta;
     return {
       status: "done",
       report: assistantText(assistant) || "(no report)",
       decision: { kind: "execute" },
+      feedbackDelivered,
     };
   }
 
@@ -455,12 +482,9 @@ export class PiBackend implements BackendAdapter {
             return req.user;
         }
       })();
-      const feedbackText = [
-        req.feedback ? `## Verifier feedback\n${req.feedback}` : null,
-        req.auditFeedback ? `## Progress audit\n${req.auditFeedback}` : null,
-      ]
-        .filter(Boolean)
-        .join("\n\n");
+      const feedbackText = req.feedback
+        ? `## Verifier feedback\n${req.feedback}`
+        : null;
       return feedbackText ? `${base}\n\n${feedbackText}` : base;
     })();
     return {
@@ -477,14 +501,19 @@ export class PiBackend implements BackendAdapter {
     input: StepInput,
     obs: ObservationEnvelope,
     plan: PlanItem[],
+    injector: FeedbackInjector,
   ): Message[] {
     const base = buildStateText(
       { task: req.task, roundIndex: req.roundIndex, observation: obs },
       plan,
     );
-    const text = req.feedback
-      ? `${base}\n\n## Verifier feedback\n${req.feedback}`
-      : base;
+    const parts = [base];
+    if (req.feedback) parts.push(`## Verifier feedback\n${req.feedback}`);
+    // 同轮反馈（周期审计/verifier）：transform 在每次模型调用前运行，取走缓冲
+    // 并合并进状态文本，保证下一次模型调用能看到本轮中途产出的指引。
+    const pending = injector.takePending();
+    if (pending) parts.push(pending);
+    const text = parts.join("\n\n");
     let lastUserIndex = -1;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i].role === "user") {
@@ -670,6 +699,15 @@ export function buildDelegatedTask(
     lines.push("success criteria:", ...criteria.map((item) => `- ${item}`));
   }
   return lines.join("\n");
+}
+
+/** 同轮反馈注入：把一段文本包装成一条 user 消息（追加进角色上下文用）。 */
+function feedbackUserMessage(text: string): UserMessage {
+  return {
+    role: "user",
+    content: [{ type: "text", text }],
+    timestamp: Date.now(),
+  };
 }
 
 export function isWriteTool(name: string): boolean {

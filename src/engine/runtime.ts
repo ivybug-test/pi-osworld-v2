@@ -114,14 +114,14 @@ export function buildRoleMessage(
   ctx: RoundContext,
   obs: ObservationEnvelope,
   feedback?: string,
-  auditFeedback?: string,
 ): string {
   const parts: string[] = [];
   for (const source of role.receives ?? defaultReceives(role)) {
     parts.push(serializeSource(source, ctx, obs));
   }
   if (feedback) parts.push(`## Verifier feedback\n${feedback}`);
-  if (auditFeedback) parts.push(`## Progress audit\n${auditFeedback}`);
+  // 周期审计反馈不拼进 user 消息：由 backend 的 FeedbackInjector 在每次模型调用前
+  // 合入上下文（同轮注入），避免与 req.auditFeedback 的 seed 路径重复。
   if (obs.terminal && !role.receives?.includes("env_state")) {
     parts.push(`## Terminal\n${obs.terminal}`);
   }
@@ -191,7 +191,7 @@ export class Runtime implements RuntimeServices {
     const backend = this.backends[roleId];
     if (!backend) throw new Error(`no backend for role ${roleId}`);
     const system = loadPromptText(role.prompt.system, this.root);
-    const user = buildRoleMessage(role, ctx, obs, feedback, auditFeedback);
+    const user = buildRoleMessage(role, ctx, obs, feedback);
     const req: EpisodeRequest = {
       episodeId: ctx.episodeId,
       role: roleId,

@@ -1,6 +1,7 @@
 import type { HarnessSpec } from "../config/spec.js";
 import type { Debugger } from "./debugger.js";
 import { createTaskState } from "./taskState.js";
+import { FeedbackInjector } from "./feedback.js";
 import {
   type AuditReport,
   type DecisionOutcome,
@@ -190,23 +191,21 @@ export class Orchestrator {
     const gateSpec = this.spec.gates?.[loop.gate];
     if (!gateSpec) throw new Error(`gate ${loop.gate} is not defined in gates`);
 
-    // 审计反馈只在本轮 main 消息注入一次；消费后清除持久化字段，
-    // 避免 serve 下一 predict 重复注入（本轮中途新产生的审计反馈保留到下一轮）。
-    const injectedAuditFeedback = this.auditFeedback;
+    // 审计反馈注入交给 FeedbackInjector：round 开始时用持久化缓冲 seed，
+    // round 中途 audit 触发时经 onTurn 的 sink offer；episode 结束时若缓冲已清空
+    // （同轮注入成功）就清除持久化字段，避免 serve 下一 predict 重复注入。
     const result = await runtime.runRoleEpisode(
       loop.feedback_to,
       ctx,
       obs,
       this.feedback,
-      injectedAuditFeedback,
-      loop.audit_every && loop.audit_role
-        ? (turn) => this.maybeRunAudit(ctx, obs, turn)
-        : undefined,
+      this.auditFeedback,
+      (turn, _cost, sink) => this.maybeRunAudit(ctx, obs, turn, sink),
     );
-    if (injectedAuditFeedback) {
+    if (result.feedbackDelivered === true) {
       this.auditFeedback = undefined;
       const fresh = (await runtime.readState(ctx.episodeId)) ?? ctx.state;
-      if (fresh.audit?.feedback === injectedAuditFeedback) {
+      if (fresh.audit?.feedback) {
         await runtime.writeState(ctx.episodeId, {
           ...fresh,
           audit: { ...fresh.audit, feedback: undefined },
@@ -292,6 +291,7 @@ export class Orchestrator {
     ctx: RoundContext,
     obs: ObservationEnvelope,
     turn: number,
+    sink?: FeedbackInjector,
   ): Promise<void> {
     const loop = this.spec.loop;
     if (loop.driver !== "gate_verdict") return;
@@ -309,11 +309,18 @@ export class Orchestrator {
       );
     }
     ctx.auditReport = audit;
-    this.auditFeedback =
+    const feedback =
       audit.feedback ??
       (audit.gaps.length
         ? audit.gaps.join("; ")
         : "progress looks on track; keep going");
+    // 生产方只负责 offer：消费方（main 的 backend）会在下次模型调用前合入上下文。
+    // 同一文本（含 header）也写入 this.auditFeedback 并持久化到 state.audit.feedback，
+    // 作为 serve 跨 predict 的兜底：episode 在审计触发后立即结束时，
+    // 下一轮 round 开始时会 seed 进新缓冲。
+    const block = `## Progress audit\n${feedback}`;
+    this.auditFeedback = block;
+    sink?.offer(block);
     runtime.emit("round.audit", {
       episodeId: ctx.episodeId,
       round: ctx.index,
@@ -329,7 +336,7 @@ export class Orchestrator {
         lastRound: ctx.index,
         lastAuditTurns: turn,
         report: audit,
-        feedback: this.auditFeedback,
+        feedback: block,
       },
     });
   }
