@@ -7,7 +7,7 @@ import {
   formatMatrixPlan,
   loadMatrix,
   matrixCellLabel,
-} from "../src/matrix.js";
+} from "../src/cli/matrix.js";
 
 describe("matrix", () => {
   it("expands configs x task_sets x runs", () => {

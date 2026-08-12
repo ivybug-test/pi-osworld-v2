@@ -4,10 +4,10 @@ import {
   modelErrorMessage,
   RoleAgent,
   toolResultMessage,
-} from "../agents/role.js";
-import type { ObservationPolicy } from "../legacy-config/spec.js";
-import { buildRoleView } from "../observation/router.js";
-import type { ObservationEnvelope } from "../observation/router.js";
+} from "../agent.js";
+import type { ObservationPolicy } from "../../../config/runtime-spec.js";
+import { buildRoleView } from "../observation.js";
+import type { ObservationEnvelope } from "../observation.js";
 import { resolveTools } from "../tools/registry.js";
 import type { Subagent, SubagentInput, SubagentOptions, SubagentOutput } from "./types.js";
 

@@ -1,7 +1,7 @@
-import type { SubagentSpec } from "../legacy-config/spec.js";
-import type { FlowContext } from "../flows/types.js";
+import type { SubagentSpec } from "../../../config/runtime-spec.js";
+import type { FlowContext } from "../flow.js";
 import type { PiModelClient } from "../models/client.js";
-import type { ObservationEnvelope } from "../observation/router.js";
+import type { ObservationEnvelope } from "../observation.js";
 
 export interface SubagentInput {
   episodeId: string;

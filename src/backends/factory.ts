@@ -3,7 +3,7 @@ import { parse as parseYaml } from "yaml";
 import type { BackendId, HarnessSpec } from "../config/spec.js";
 import type { BackendAdapter } from "./base.js";
 import type { SubtaskContract } from "../engine/types.js";
-import { PiBackend } from "./pi.js";
+import { PiBackend } from "./pi/backend.js";
 import {
   MockBackend,
   type MockStep,

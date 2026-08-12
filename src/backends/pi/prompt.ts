@@ -7,7 +7,7 @@ import {
   NodeExecutionEnv,
   type PromptTemplate,
 } from "@earendil-works/pi-agent-core/node";
-import type { PromptSpec } from "../legacy-config/spec.js";
+import type { PromptSpec } from "../../config/runtime-spec.js";
 
 export interface ResolvedPromptTemplate {
   name: string;

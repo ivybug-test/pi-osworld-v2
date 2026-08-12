@@ -5,8 +5,8 @@ import path from "node:path";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { PiModelClient } from "pi-osworld/dist/models/client.js";
 import { loadHarnessSpec } from "../src/config/load.js";
-import { PiBackend, buildDelegatedTask, buildGateText, buildStateText, isWriteTool } from "../src/backends/pi.js";
-import { buildLegacyConfig } from "../src/legacy/context.js";
+import { PiBackend, buildDelegatedTask, buildGateText, buildStateText, isWriteTool } from "../src/backends/pi/backend.js";
+import { buildLegacyConfig } from "../src/backends/pi/compat.js";
 import type { EpisodeRequest } from "../src/engine/types.js";
 
 // ---------------------------------------------------------------------------

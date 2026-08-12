@@ -20,10 +20,27 @@ const manifest = JSON.parse(
   readFileSync(path.join(v2Root, "scripts", "legacy-manifest.json"), "utf8"),
 );
 
-function rewriteImports(text) {
-  return text
-    .replaceAll('"../config/spec.js"', '"../legacy-config/spec.js"')
-    .replaceAll("'../config/spec.js'", "'../legacy-config/spec.js'");
+// v1 模块路径 → v2 模块路径（按 manifest 推导，dir 迁移时只需改 manifest）。
+const moves = Object.fromEntries(
+  manifest.map((entry) => [
+    entry.v1.replace(/\.ts$/, ""),
+    entry.v2.replace(/\.ts$/, ""),
+  ]),
+);
+
+function rewriteImports(text, v1Path, v2Path) {
+  const oldDir = path.posix.dirname(v1Path);
+  const newDir = path.posix.dirname(v2Path);
+  return text.replace(
+    /(\b(?:from|import)\s*)(['"])(\.\.?\/[^'"]+)\2/g,
+    (match, pre, quote, spec) => {
+      const nojs = spec.replace(/\.js$/, "");
+      const oldTarget = path.posix.normalize(path.posix.join(oldDir, nojs));
+      const newTarget = moves[oldTarget] ?? oldTarget;
+      const rel = path.posix.relative(newDir, newTarget).replace(/\\/g, "/");
+      return `${pre}${quote}${rel.startsWith(".") ? rel : `./${rel}`}.js${quote}`;
+    },
+  );
 }
 
 for (const entry of manifest) {
@@ -33,7 +50,11 @@ for (const entry of manifest) {
   }
   const src = path.join(v1Root, entry.v1);
   const dst = path.join(v2Root, entry.v2);
-  const text = rewriteImports(readFileSync(src, "utf8"));
+  const text = rewriteImports(
+    readFileSync(src, "utf8"),
+    entry.v1,
+    entry.v2,
+  );
   mkdirSync(path.dirname(dst), { recursive: true });
   writeFileSync(dst, text);
   console.log(`synced ${entry.v1} -> ${entry.v2}`);

@@ -1,4 +1,4 @@
-import type { FlowContext } from "../flows/types.js";
+import type { FlowContext } from "../flow.js";
 import type { PiModelClient } from "../models/client.js";
 import { RoleSubagent } from "./role-subagent.js";
 import type { Subagent } from "./types.js";

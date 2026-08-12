@@ -7,13 +7,13 @@ import type {
   Message,
   UserMessage,
 } from "@earendil-works/pi-ai";
-import { RoleAgent, toolResultMessage } from "../src/agents/role.js";
+import { RoleAgent, toolResultMessage } from "../src/backends/pi/agent.js";
 import { loadHarnessSpec } from "../src/config/load.js";
-import type { FlowContext, StepInput } from "../src/flows/types.js";
-import { buildLegacyConfig } from "../src/legacy/context.js";
-import type { PiModelClient as PiModelClientLocal } from "../src/models/client.js";
-import { RunWriter } from "../src/telemetry/writer.js";
-import { resolveTools } from "../src/tools/registry.js";
+import type { FlowContext, StepInput } from "../src/backends/pi/flow.js";
+import { buildLegacyConfig } from "../src/backends/pi/compat.js";
+import type { PiModelClient as PiModelClientLocal } from "../src/backends/pi/models/client.js";
+import { RunWriter } from "../src/backends/pi/telemetry.js";
+import { resolveTools } from "../src/backends/pi/tools/registry.js";
 
 const LEGACY_STATEACT = "/home/binqiu/osworld-experiments/experiments/stateact-minimal.yaml";
 

@@ -29,7 +29,7 @@ v2 还需要自己补：
 
 - `python/run_v2_cluster.py`：集群调度骨架，复用 fork 的
   `DesktopEnv` / `lib_run_single` / `task_loader`，把 agent 换成 `PiOSWorldV2Agent`。
-- `src/models/client.ts`：注册 `qwen-gateway` OpenAI provider，供 parametrix qwen 使用。
+- `src/backends/pi/models/client.ts`：注册 `qwen-gateway` OpenAI provider，供 parametrix qwen 使用。
 - `.env` / `.env.example`：补齐 Aliyun / OSS / parametrix 字段。
 
 ## 核心决策

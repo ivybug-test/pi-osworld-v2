@@ -8,19 +8,19 @@ import {
   contextOptionsFromConfig,
   mergeContextConfig,
   PiContextManager,
-} from "../context/manager.js";
+} from "./context/manager.js";
 import {
   applyM3ImageTruncation,
   type M3ImageTruncationOptions,
-} from "../context/image-truncation.js";
-import type { FlowContext, StepInput } from "../flows/types.js";
+} from "./context/image-truncation.js";
+import type { FlowContext, StepInput } from "./flow.js";
 import {
   createPiModelClient,
   resolveModelForAlias,
   type PiModelClient,
-} from "../models/client.js";
-import type { ToolExecutionResult } from "../tools/executor.js";
-import { resolvePrompt, type ResolvedPrompt } from "../prompt/manager.js";
+} from "./models/client.js";
+import type { ToolExecutionResult } from "./tools/executor.js";
+import { resolvePrompt, type ResolvedPrompt } from "./prompt.js";
 
 export interface RoleAgentOptions {
   context: FlowContext;

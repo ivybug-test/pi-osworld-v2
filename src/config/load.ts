@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { HarnessSpec, type HarnessSpec as HarnessSpecT } from "./spec.js";
-import { convertLegacySpec, isLegacySpec, parseLegacySpec } from "./legacyCompat.js";
+import { convertLegacySpec, isLegacySpec, parseLegacySpec } from "./compat.js";
 
 export interface LoadedSpec {
   spec: HarnessSpecT;

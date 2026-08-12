@@ -3,11 +3,11 @@ import {
   assistantToolCalls,
   modelErrorMessage,
   RoleAgent,
-} from "../agents/role.js";
-import type { FlowContext, StepInput } from "../flows/types.js";
-import type { PiModelClient } from "../models/client.js";
-import type { ObservationEnvelope } from "../observation/router.js";
-import { resolveTools } from "../tools/registry.js";
+} from "./agent.js";
+import type { FlowContext, StepInput } from "./flow.js";
+import type { PiModelClient } from "./models/client.js";
+import type { ObservationEnvelope } from "./observation.js";
+import { resolveTools } from "./tools/registry.js";
 
 export interface FinishGateOptions {
   /** Test seam: per-role model client overrides keyed by agent role id. */

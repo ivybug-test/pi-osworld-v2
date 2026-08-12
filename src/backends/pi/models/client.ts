@@ -17,8 +17,8 @@ import {
 } from "@earendil-works/pi-ai";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { ModelSamplingConfig } from "../legacy-config/spec.js";
-import type { RunWriter } from "../telemetry/writer.js";
+import type { ModelSamplingConfig } from "../../../config/runtime-spec.js";
+import type { RunWriter } from "../telemetry.js";
 import { resolveModelRef, type ModelRef } from "./registry.js";
 
 export interface LlmTraceMetadata {

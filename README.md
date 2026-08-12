@@ -2,8 +2,8 @@
 
 可调试、靠 YAML 组合任意 harness 的实验框架。核心思想：**引擎唯一，harness = YAML 组合**。
 论文 LongHorizon-Harness 的 MEA 只是 `presets/mea.yaml` 一份配置，不是代码模块。
-旧 `pi-osworld` 的 `RoleAgent`/`PiContextManager`/`RoleSubagent` 只 import 不重写，
-经 `src/legacy/imports.ts` 唯一通道接入。
+`RoleAgent`/`PiContextManager`/`RoleSubagent` 等 Pi 运行时实现收在
+`src/backends/pi/`，由 `PiBackend` 唯一出口接入引擎。
 
 > 设计文档 `DESIGN-v2.md`；落地计划见 `PLAN.md`（含 Phase E 单仓自包含迁移）。
 
@@ -11,7 +11,8 @@
 
 ```text
 pi-osworld-v2/
-├── src/ python/ dist/           # 框架本体（dist 由 npm run build 生成，不入 git）
+├── src/                         # 框架本体：config / engine / backends / env / bridge / cli
+├── python/ dist/                # Python runner（dist 由 npm run build 生成，不入 git）
 ├── presets/ experiments/ task-sets/ prompts/   # 实验配置树，自包含
 ├── external/OSWorld-V2          # 官方 OSWorld-V2 git submodule（含 osworld-server）
 ├── patches/                     # 对官方仓库的必要补丁（如 docker port lock）
@@ -35,9 +36,9 @@ bash scripts/setup.sh             # submodule + npm install/build + .env + 资�
 - **引擎**：`src/engine/orchestrator.ts` 通用 round-loop 解释器，三种 driver：
   `self_report`（m3）/ `gate_verdict`（stateact）/ `manager_decision`（论文 MEA）
 - **spec**：`src/config/spec.ts` zod schema，`extends` 深合并 + 循环检测 + config hash；
-  `legacyCompat` 把旧 `agents/topology` YAML 自动转换为 v2 spec（含 pi 后端旋钮）
+  `src/config/compat.ts` 把旧 `agents/topology` YAML 自动转换为 v2 spec（含 pi 后端旋钮）
 - **后端可插拔**：
-  - `pi`：`src/backends/pi.ts` 包装旧 `RoleAgent`（消息拼法对齐旧 flow：
+  - `pi`：`src/backends/pi/backend.ts` 包装 `RoleAgent`（消息拼法对齐旧 flow：
     `state_text` / `raw_task` / `gate`；内部工具循环 + plan 外部化 + 每轮 state 刷新；
     `read_only` 写工具拦截；`delegate.*` 委派给旧 `RoleSubagent`）
   - `mock`：脚本化行为，单测/调试/CI 无模型跑通
@@ -53,9 +54,9 @@ npm test                  # 单测（spec / legacy / piBackend / orchestrator / 
 npm run build
 
 # mock 冒烟（不调模型，config-root 指向仓库根）
-node_modules/.bin/tsx src/cli.ts run \
+node_modules/.bin/tsx src/cli/index.ts run \
   --config experiments/mea-demo.yaml --root . --result-dir /tmp/piosworld-demo
-node_modules/.bin/tsx src/cli.ts run \
+node_modules/.bin/tsx src/cli/index.ts run \
   --config experiments/stateact-demo.yaml --root . --result-dir /tmp/piosworld-sa
 
 # 真实验入口：run_v2.py 内部起 v2 serve + OSWorld VM

@@ -1,12 +1,12 @@
-import type { HarnessSpec } from "../config/spec.js";
-import type { ContextSpec } from "../config/spec.js";
+import type { HarnessSpec } from "../../config/spec.js";
+import type { ContextSpec } from "../../config/spec.js";
+import { HttpToolExecutor } from "../../env/http.js";
 import {
-  HttpToolExecutor,
   RunWriter,
   type ContextConfig,
   type ExperimentConfig,
   type FlowContext,
-} from "./imports.js";
+} from "./index.js";
 
 // ---------------------------------------------------------------------------
 // legacy 运行时桥：v2 spec → 旧 ExperimentConfig / FlowContext

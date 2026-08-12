@@ -1,13 +1,8 @@
-import type { ObservationPolicy } from "../legacy-config/spec.js";
+import type { ObservationChannel } from "../../config/spec.js";
+import type { ObservationPolicy } from "../../config/runtime-spec.js";
+import type { ObservationEnvelope } from "../../engine/types.js";
 
-export interface ObservationEnvelope {
-  screenshotB64?: string;
-  /** MIME type of screenshotB64. Defaults to image/png for legacy payloads. */
-  screenshotMime?: string;
-  accessibilityTree?: string;
-  userResponse?: string;
-  terminal?: string;
-}
+export type { ObservationEnvelope };
 
 /**
  * Accept both wire formats for the screenshot payload. The Node bridge reads
@@ -24,14 +19,6 @@ export function normalizeObservation(
   if (!screenshot_b64 || rest.screenshotB64) return rest;
   return { ...rest, screenshotB64: screenshot_b64 };
 }
-
-export type ObservationChannel =
-  | "screenshot"
-  | "accessibility_tree"
-  | "state"
-  | "user_response"
-  | "terminal"
-  | "tool_text";
 
 export interface RoleObservationView {
   channels: ObservationChannel[];

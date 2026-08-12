@@ -16,11 +16,28 @@ interface ManifestEntry {
 
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as ManifestEntry[];
 
-/** v2 镜像文件把旧 spec import 收敛到 legacy-config，比较前做同样归一化。 */
-function normalizeImports(text: string): string {
-  return text
-    .replaceAll('"../config/spec.js"', '"../legacy-config/spec.js"')
-    .replaceAll("'../config/spec.js'", "'../legacy-config/spec.js'");
+/** v1 模块路径 → v2 模块路径（与 scripts/sync-legacy.mjs 同一套映射）。 */
+const moves = new Map(
+  manifest.map((entry) => [
+    entry.v1.replace(/\.ts$/, ""),
+    entry.v2.replace(/\.ts$/, ""),
+  ]),
+);
+
+/** v2 镜像文件按新目录重写相对 import，比较前对 v1 内容做同样归一化。 */
+function normalizeImports(text: string, v1Path: string, v2Path: string): string {
+  const oldDir = path.posix.dirname(v1Path);
+  const newDir = path.posix.dirname(v2Path);
+  return text.replace(
+    /(\b(?:from|import)\s*)(['"])(\.\.?\/[^'"]+)\2/g,
+    (match, pre, quote, spec: string) => {
+      const nojs = spec.replace(/\.js$/, "");
+      const oldTarget = path.posix.normalize(path.posix.join(oldDir, nojs));
+      const newTarget = moves.get(oldTarget) ?? oldTarget;
+      const rel = path.posix.relative(newDir, newTarget).replace(/\\/g, "/");
+      return `${pre}${quote}${rel.startsWith(".") ? rel : `./${rel}`}.js${quote}`;
+    },
+  );
 }
 
 const v1Available =
@@ -35,6 +52,8 @@ describe.skipIf(!v1Available)("legacy drift", () => {
     it(`${entry.v1} mirrors v2 ${entry.v2}`, () => {
       const expected = normalizeImports(
         readFileSync(path.join(v1Root, entry.v1), "utf8"),
+        entry.v1,
+        entry.v2,
       );
       const actual = readFileSync(path.join(v2Root, entry.v2), "utf8");
       expect(actual).toBe(expected);

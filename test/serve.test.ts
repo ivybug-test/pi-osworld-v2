@@ -4,7 +4,7 @@ import { MemoryTaskStateStore } from "../src/engine/taskState.js";
 import { Runtime } from "../src/engine/runtime.js";
 import { Orchestrator } from "../src/engine/orchestrator.js";
 import { MockBackend } from "../src/backends/mock.js";
-import { summaryToStepOutput } from "../src/serve.js";
+import { summaryToStepOutput } from "../src/cli/serve.js";
 import type { EpisodeSummary } from "../src/engine/types.js";
 
 function makeSpec(loop: unknown): HarnessSpec {

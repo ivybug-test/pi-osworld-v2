@@ -1,7 +1,7 @@
-import type { ExperimentConfig } from "../legacy-config/spec.js";
-import type { ObservationEnvelope } from "../observation/router.js";
-import type { ToolExecutor } from "../tools/executor.js";
-import type { RunWriter } from "../telemetry/writer.js";
+import type { ExperimentConfig } from "../../config/runtime-spec.js";
+import type { ObservationEnvelope } from "./observation.js";
+import type { ToolExecutor } from "./tools/executor.js";
+import type { RunWriter } from "./telemetry.js";
 
 export interface FlowContext {
   config: ExperimentConfig;

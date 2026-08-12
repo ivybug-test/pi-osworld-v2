@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadHarnessSpec } from "../src/config/load.js";
-import { isLegacySpec, convertLegacySpec } from "../src/config/legacyCompat.js";
+import { isLegacySpec, convertLegacySpec } from "../src/config/compat.js";
 import type { HarnessSpec as HarnessSpecT } from "../src/config/spec.js";
 
 describe("legacyCompat: 旧 agents/topology YAML → v2 HarnessSpec", () => {

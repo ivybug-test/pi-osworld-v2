@@ -1,19 +1,19 @@
 import { createInterface } from "node:readline";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import type { BackendId } from "./config/spec.js";
-import type { BridgeRequest, BridgeResponse } from "./bridge/protocol.js";
-import { loadHarnessSpec } from "./config/load.js";
-import { buildBackends, uniqueBackends } from "./backends/factory.js";
-import { RecordingDebugger } from "./engine/debugger.js";
-import { Orchestrator } from "./engine/orchestrator.js";
-import { Runtime } from "./engine/runtime.js";
+import type { BackendId } from "../config/spec.js";
+import type { BridgeRequest, BridgeResponse } from "../bridge/protocol.js";
+import { loadHarnessSpec } from "../config/load.js";
+import { buildBackends, uniqueBackends } from "../backends/factory.js";
+import { RecordingDebugger } from "../engine/debugger.js";
+import { Orchestrator } from "../engine/orchestrator.js";
+import { Runtime } from "../engine/runtime.js";
 import {
   FileTaskStateStore,
   MemoryTaskStateStore,
   type TaskStateStore,
-} from "./engine/taskState.js";
-import type { EpisodeSummary } from "./engine/types.js";
+} from "../engine/taskState.js";
+import type { EpisodeSummary } from "../engine/types.js";
 
 // ---------------------------------------------------------------------------
 // serve：JSONL bridge（复用旧 BridgeRequest/BridgeResponse 协议）。

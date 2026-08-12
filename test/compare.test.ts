@@ -6,7 +6,7 @@ import {
   formatCompare,
   loadRunCompare,
   resolveRunDirs,
-} from "../src/compare.js";
+} from "../src/cli/compare.js";
 
 function tmpDir(): string {
   return mkdtempSync(path.join(tmpdir(), "piosworld-v2-compare-"));

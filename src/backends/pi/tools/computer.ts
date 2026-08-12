@@ -1,5 +1,5 @@
 import { Type, type Tool } from "@earendil-works/pi-ai";
-import { toPyAutoGui, type ToolCallKind } from "../actions/adapter.js";
+import { toPyAutoGui, type ToolCallKind } from "../../../env/actions.js";
 
 export interface ComputerAction {
   response?: string;

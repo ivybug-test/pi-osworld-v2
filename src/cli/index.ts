@@ -7,16 +7,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
-import { loadHarnessSpec } from "./config/load.js";
-import type { BackendId } from "./config/spec.js";
-import { buildBackends, uniqueBackends } from "./backends/factory.js";
-import { CliDebugger, RecordingDebugger } from "./engine/debugger.js";
-import { Orchestrator } from "./engine/orchestrator.js";
-import { Runtime } from "./engine/runtime.js";
+import { loadHarnessSpec } from "../config/load.js";
+import type { BackendId } from "../config/spec.js";
+import { buildBackends, uniqueBackends } from "../backends/factory.js";
+import { CliDebugger, RecordingDebugger } from "../engine/debugger.js";
+import { Orchestrator } from "../engine/orchestrator.js";
+import { Runtime } from "../engine/runtime.js";
 import {
   FileTaskStateStore,
   MemoryTaskStateStore,
-} from "./engine/taskState.js";
+} from "../engine/taskState.js";
 import { runServe } from "./serve.js";
 import { formatReplay, loadEvents, summarizeRounds } from "./replay.js";
 import {

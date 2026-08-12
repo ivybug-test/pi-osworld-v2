@@ -105,6 +105,8 @@ export interface ToolCall {
 
 export interface ObservationEnvelope {
   screenshotB64?: string;
+  /** MIME type of screenshotB64. Defaults to image/png for legacy payloads. */
+  screenshotMime?: string;
   accessibilityTree?: string;
   userResponse?: string;
   terminal?: string;

@@ -11,7 +11,7 @@ import {
   type AgentMessage,
   type CompactionSettings,
 } from "@earendil-works/pi-agent-core";
-import type { ContextConfig } from "../legacy-config/spec.js";
+import type { ContextConfig } from "../../../config/runtime-spec.js";
 import {
   createCompactionStrategy,
   type CompactionStrategy,

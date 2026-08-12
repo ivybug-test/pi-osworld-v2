@@ -3,8 +3,8 @@ import {
   CliDebugger,
   RecordingDebugger,
 } from "../src/engine/debugger.js";
-import { summarizeRounds, formatReplay, loadEvents } from "../src/replay.js";
-import type { ReplayEvent } from "../src/replay.js";
+import { summarizeRounds, formatReplay, loadEvents } from "../src/cli/replay.js";
+import type { ReplayEvent } from "../src/cli/replay.js";
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";

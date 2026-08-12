@@ -16,7 +16,7 @@
 | # | 任务 | 验证 |
 |---|------|------|
 | A1 | 建立 legacy 包链接：`file:` 依赖 `pi-osworld`，验证 `RoleAgent`/`PiContextManager`/`RoleSubagent` 可从 v2 import（类型 + 运行时） | `npm install` 后 tsc 通过；node 可动态 import 旧 dist |
-| A2 | `src/backends/pi.ts`：`PiBackend implements BackendAdapter`。把 `EpisodeRequest`（system/user/tools/budget/freshPerRound）映射到旧 `RoleAgent.stepUntilDecision`：tool executor 注入、`budget.max_steps → maxToolCalls`、`freshPerRound → reset`、terminal 工具集合从 spec 参数化 | 单测：注入 fake client，验证消息/工具/轮次/预算/重置行为 |
+| A2 | `src/backends/pi/backend.ts`：`PiBackend implements BackendAdapter`。把 `EpisodeRequest`（system/user/tools/budget/freshPerRound）映射到旧 `RoleAgent.stepUntilDecision`：tool executor 注入、`budget.max_steps → maxToolCalls`、`freshPerRound → reset`、terminal 工具集合从 spec 参数化 | 单测：注入 fake client，验证消息/工具/轮次/预算/重置行为 |
 | A3 | legacy 运行时桥：v2 内构造旧 `FlowContext` 等价物（`RunWriter` 复用、模型 alias 映射、`PI_OSWORLD_TOOL_SERVER` 地址），不依赖旧 config 加载 | 单测：RunWriter 事件落盘、model 映射正确 |
 | A4 | 消息拼法对齐：Pi 模式下 user 消息 = 旧 `buildRoleView` + stateText/plan 注入格式；main 的 plan 注入与动态 observation 刷新参数化进 spec（默认关闭，stateact preset 开启） | 快照测试：main/gui/finish_gate 的 user 消息与旧 flow 逐字段一致 |
 
@@ -90,6 +90,34 @@ parametrix 集群实验；跑通后在 Phase F4 把集群增量收进 v2，换�
 
 **阶段验收**：`--provider-name aliyun` 下 stateact 与 m3 在集群跑通，结果可对比。
 
+## Phase G — 结构整理 + MEA 补齐（2026-08-12 确认）
+
+目标：先把 `src/` 按职责层重组（取消 `legacy` 概念，纯机械迁移不改行为），
+再补 MEA 相对论文缺的原语并实跑。阶段 G 不并行跑实验，避免污染结果目录。
+
+### G1 代码结构整理（先做）
+
+| # | 任务 | 验证 |
+|---|------|------|
+| G1.1 | 建目标骨架：`src/backends/pi/`、`src/config/runtime-spec.ts`、`src/cli/`、`src/env/actions.ts` | `git mv` 后 import 全部可解析 |
+| G1.2 | 机械迁移：`legacy/imports.ts` → `backends/pi/index.ts`；`legacy/context.ts` → `backends/pi/compat.ts`；`backends/pi.ts` → `backends/pi/backend.ts`；`legacy-config/spec.ts` → `config/runtime-spec.ts`；agents/context/subagents/gate/tools/observation/prompt/models/telemetry/flows 收进 `backends/pi/`；`actions/adapter.ts` → `env/actions.ts`；serve/replay/compare/matrix 收进 `cli/`；`config/legacyCompat.ts` → `config/compat.ts` | import 重写后 `npm run build` 通过 |
+| G1.3 | 消重复类型：`ObservationEnvelope` 统一到 `engine/types.ts`；`ObservationChannel` 统一到 `config/spec.ts` | `tsc` 无重复定义；单测不变 |
+| G1.4 | 环境层归位：`HttpToolExecutor` 移入 `env/http.ts`，`ToolExecutor` 接口留在 pi 侧 | 环境层/运行时 import 无环 |
+| G1.5 | 同步收尾：更新 `scripts/legacy-manifest.json`、`sync-legacy.mjs`、drift/单测 import；删除根目录 `tmp-dump-spec.ts`；更新 DESIGN-v2.md §6 / README / PLAN | `npm test` + `npm run build` 全绿；mock smoke（mea-demo / stateact-demo）通过 |
+| G1.6 | 验收：`src/legacy/`、`src/legacy-config/` 消失；`git grep legacy` 只剩 v1 YAML 兼容语义 | 测试数量不回退 |
+
+### G2 MEA 补齐并实跑（后做）
+
+| # | 任务 | 验证 |
+|---|------|------|
+| G2.1 | IntegrityMonitor：`env/` 加 workspace snapshot/diff 原语（before/after 快照、变更列表、mutation 台账、不可变文件拦截）；`Runtime.checkIntegrity` 接真实 diff | 单测：diff 检测 violation |
+| G2.2 | deadline 强制：`max_seconds` 经 AbortController 接到 PiBackend 执行循环，超时返回 `blocked` | 单测：超时路径 |
+| G2.3 | GUI 审计能力：只读 screenshot + a11y 工具集，支持按契约 target 路由 gui 审计 | 单测：只读工具集拦截 |
+| G2.4 | auditor 独立性旋钮：`receives` 是否注入 `executor_report` 由 YAML 控制，MEA preset 按论文语义关闭轨迹相关内容 | mock MEA 冒烟 |
+| G2.5 | MEA 实跑：`presets/mea.yaml` + 真实模型跑 task 004，产物 `contract/executor_report/audit_report/task_state` 齐全 | score > 0 且与 stateact/m3 可对比 |
+
+**阶段验收**：`src/legacy*` 完全移除；MEA 单测 + mock 冒烟全过；task 004 实跑产出完整审计闭环。
+
 ## 时间量级（路径依赖）
 
 - Phase A：1–2 天（含消息对齐的逐字段核对）
@@ -100,7 +128,7 @@ parametrix 集群实验；跑通后在 Phase F4 把集群增量收进 v2，换�
 ## 当前状态
 
 - [x] P0 骨架（spec / legacy / orchestrator / runtime / mock / debug / replay）
-- [x] A1 导入通道（file: 依赖 + src/legacy/imports.ts 唯一出口，运行时与类型均验证）
+- [x] A1 导入通道（file: 依赖 + src/backends/pi/index.ts 唯一出口，运行时与类型均验证）
 - [x] A2 PiBackend（interior_loop / terminal_tools / plan_tool / refresh_state / read_only /
       delegations 旋钮；fake client 11 个单测）
 - [x] A3 运行时桥（buildLegacyConfig / buildLegacyFlowContext + RunWriter）

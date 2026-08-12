@@ -1,10 +1,10 @@
-import type { HarnessSpec, RoleSpec } from "../config/spec.js";
-import type { BackendAdapter } from "./base.js";
+import type { HarnessSpec, RoleSpec } from "../../config/spec.js";
+import type { BackendAdapter } from "../base.js";
 import type {
   EpisodeRequest,
   EpisodeResult,
   ObservationEnvelope,
-} from "../engine/types.js";
+} from "../../engine/types.js";
 import type { Message, UserMessage } from "@earendil-works/pi-ai";
 import {
   RoleAgent,
@@ -22,9 +22,9 @@ import {
   type StepInput,
   type SubagentOutput,
   type ToolExecutionResult,
-} from "../legacy/imports.js";
-import { buildLegacyFlowContext } from "../legacy/context.js";
-import { policyForRole } from "../primitives/permission.js";
+} from "./index.js";
+import { buildLegacyFlowContext } from "./compat.js";
+import { policyForRole } from "../../primitives/permission.js";
 
 // ---------------------------------------------------------------------------
 // Pi 后端：包装旧 RoleAgent + PiContextManager + RoleSubagent，不重写。

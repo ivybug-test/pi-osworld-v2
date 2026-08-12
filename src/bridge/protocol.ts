@@ -1,4 +1,4 @@
-import type { ObservationEnvelope } from "../observation/router.js";
+import type { ObservationEnvelope } from "../backends/pi/observation.js";
 
 export type BridgeRequest =
   | {

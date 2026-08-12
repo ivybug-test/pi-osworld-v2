@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveModelForAlias } from "../src/models/client.js";
+import { resolveModelForAlias } from "../src/backends/pi/models/client.js";
 
 describe("qwen-gateway provider", () => {
   const originalBaseUrl = process.env.OPENAI_BASE_URL;

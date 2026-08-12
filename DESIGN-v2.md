@@ -256,7 +256,7 @@ interface GateVerdict {
 }
 ```
 
-现有 `FinishGate`（`src/gate/finish-gate.ts`）收敛为 Gate 原语的一个实例
+现有 `FinishGate`（`src/backends/pi/gate.ts`）收敛为 Gate 原语的一个实例
 （fresh context + 只读工具集 + verdict 工具）。
 
 ### 4.5 PermissionPolicy + IntegrityMonitor —— 只读结构性强制
@@ -326,40 +326,49 @@ type Driver =
 ## 6. 目录结构
 
 ```text
-pi-osworld/
+pi-osworld-v2/
 ├── package.json
 ├── src/
-│   ├── cli.ts                    # run / debug / replay / compare / doctor / matrix
+│   ├── cli/                      # 命令层：index（run/debug）/ serve / replay / compare / matrix
 │   ├── config/
 │   │   ├── spec.ts               # HarnessSpec 全量 schema（zod）
+│   │   ├── runtime-spec.ts       # Pi 运行时配置类型（原 legacy-config/spec.ts）
 │   │   ├── load.ts               # 加载 + extends/覆盖 + 校验 + config hash
-│   │   ├── matrix.ts             # --matrix 组合展开
-│   │   └── defaults.yaml
-│   ├── presets/                  # 命名组合：round-loop.yaml / mea.yaml / stateact.yaml / m3-single.yaml
-│   ├── engine/
+│   │   └── compat.ts             # v1 agents/topology YAML → HarnessSpec
+│   ├── engine/                   # 编排层，与具体后端无关
+│   │   ├── types.ts              # TaskState/Contract/Round + ObservationEnvelope
 │   │   ├── orchestrator.ts       # 通用 round-loop 解释器（唯一一份）
-│   │   ├── drivers.ts            # driver 原语（manager_decision / self_report / gate_verdict / policy）
-│   │   ├── router.ts             # 契约 target → gui/cli 路由
-│   │   └── runtime.ts            # 角色/工具/状态运行时实例化
-│   ├── primitives/
-│   │   ├── backend.ts            # BackendAdapter 接口
-│   │   ├── environment.ts        # Environment 接口
-│   │   ├── task-state.ts         # TaskStateStore
-│   │   ├── gate.ts               # Gate 原语
-│   │   ├── permission.ts         # PermissionPolicy
-│   │   ├── integrity.ts          # IntegrityMonitor
-│   │   ├── budget.ts             # BudgetController
-│   │   └── termination.ts        # TerminationPolicy
-│   ├── backends/                 # pi.ts / codex.ts / claude.ts / openclaw.ts / mock.ts
-│   ├── agents/role.ts            # 保留（Pi backend 实现细节）
-│   ├── context/manager.ts        # 保留（storage 可插拔）
-│   ├── subagents/…               # 保留（fresh-context 委派 = RoleSubagent 原语）
-│   ├── tools/…                   # 保留（工具组注册）
-│   ├── observation/router.ts     # 保留（channel 可扩展）
-│   ├── gate/finish-gate.ts       # 保留（收敛为 Gate 原语实例）
-│   ├── bridge/…                  # 保留 + resume 请求
-│   └── telemetry/                # writer.ts（保留）+ manifest.ts + replay.ts
-├── python/                       # 保留；协议文档化
+│   │   ├── runtime.ts            # Runtime 装配 + receives 消息组装
+│   │   ├── taskState.ts          # TaskStateStore
+│   │   ├── debugger.ts           # 轮间暂停 / 干预
+│   │   └── interventions.ts
+│   ├── backends/                 # 后端适配层
+│   │   ├── base.ts               # BackendAdapter 接口
+│   │   ├── factory.ts
+│   │   ├── mock.ts
+│   │   └── pi/                   # Pi 后端 + 其运行时实现
+│   │       ├── index.ts          # Pi 运行时唯一出口
+│   │       ├── compat.ts         # HarnessSpec → FlowContext
+│   │       ├── backend.ts        # PiBackend
+│   │       ├── agent.ts          # RoleAgent
+│   │       ├── context/          # manager / compaction / image-truncation
+│   │       ├── subagents/        # RoleSubagent + types + registry
+│   │       ├── gate.ts           # FinishGate
+│   │       ├── observation.ts    # buildRoleView / normalizeObservation
+│   │       ├── prompt.ts         # prompt 模板管理
+│   │       ├── models/           # model client / registry
+│   │       ├── telemetry.ts      # RunWriter
+│   │       ├── flow.ts           # FlowContext / StepInput / StepOutput
+│   │       └── tools/            # registry / computer / delegation / executor / plan / state
+│   ├── env/                      # OSWorld 环境桥
+│   │   ├── types.ts              # Environment 接口
+│   │   ├── http.ts               # HttpToolExecutor / HttpEnvironment / 只读双闸
+│   │   └── actions.ts            # tool call → pyautogui
+│   ├── bridge/
+│   │   └── protocol.ts           # JSONL serve 协议
+│   └── primitives/
+│       └── permission.ts         # PermissionPolicy
+├── python/                       # runner + adapter，协议文档化
 └── test/
     ├── unit/…                    # 保留
     └── integration/              # mock env + mock backend 端到端（含 mea.yaml 冒烟）
@@ -416,7 +425,7 @@ pi-osworld/
 
 > 依据 `osworld-experiments/` 现有 YAML（`experiments/m3-single.yaml`、
 > `experiments/stateact-minimal.yaml`）与 `runs/` 产物结构提炼。
-> 兼容旧格式：`agents` / `topology` 写法经 `legacyCompat` 转换，行为不变。
+> 兼容旧格式：`agents` / `topology` 写法经 `src/config/compat.ts` 转换，行为不变。
 
 ### 10.1 HarnessSpec（schema 草案）
 
@@ -567,7 +576,7 @@ const HarnessSpec = z.object({
 
 ### 10.2 legacy 兼容（现有两个 YAML 原样可跑）
 
-`legacyCompat.ts`：检测到顶层有 `agents` / `topology` 即按下表转换为 v2 spec，
+`src/config/compat.ts`：检测到顶层有 `agents` / `topology` 即按下表转换为 v2 spec，
 打印 "loaded as legacy spec"；转换后语义与现状一致。
 
 | 旧字段 | v2 映射 |
