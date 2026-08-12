@@ -64,4 +64,11 @@ describe("message parity (A4)", () => {
     expect(names).not.toContain("state.write_file");
     expect(names).not.toContain("state.bash");
   });
+
+  it("audit.submit tool schema exposes next_goals so the model can commit checkable goals", () => {
+    const tools = resolveTools(["audit.submit"]);
+    const tool = tools.find((t) => t.name === "audit.submit");
+    expect(tool).toBeDefined();
+    expect(JSON.stringify(tool?.parameters)).toContain("next_goals");
+  });
 });

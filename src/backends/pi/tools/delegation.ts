@@ -87,5 +87,13 @@ export const auditSubmitTool: Tool = {
           "Short actionable feedback for the main agent (what to check / what to do next). Omit or keep brief when progress is on track.",
       }),
     ),
+    next_goals: Type.Optional(
+      Type.Array(
+        Type.String({
+          description:
+            "Checkable outcome goals for the next audit to verify one by one (for example: 'calendar.ics contains all 7 defense events with correct venue and time').",
+        }),
+      ),
+    ),
   }),
 };
