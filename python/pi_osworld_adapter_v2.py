@@ -36,7 +36,6 @@ class PiOSWorldV2Agent(PiOSWorldAgent):
         return [
             os.environ.get("PI_OSWORLD_NODE", "node"),
             str(v2_root / "dist" / "cli.js"),
-            "serve",
         ]
 
     def _ensure_process(self) -> None:
@@ -46,6 +45,7 @@ class PiOSWorldV2Agent(PiOSWorldAgent):
         self._ensure_tool_server()
         command = [
             *self.command,
+            "serve",
             "--config",
             self.config_path,
             "--root",

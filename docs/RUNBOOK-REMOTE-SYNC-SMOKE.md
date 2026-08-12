@@ -71,3 +71,36 @@ su zhilongli -c 'cd /home/zhilongli/OSWorld-V2 && \
     --log-file /home/zhilongli/pi-osworld-v2/logs/audit_smoke.log \
     > /home/zhilongli/pi-osworld-v2/logs/audit_smoke.out 2>&1 < /dev/null &'
 ```
+
+## 坑 7：设置 `PI_OSWORLD_V2_CLI` 后 serve 打印 usage 退出（2026-08-12 踩到）
+
+- 现象：VM 创建成功、任务解析正常，但 adapter 拉起的 serve 子进程打印
+  `pi-osworld v2 usage:` 后立刻退出；`_request` 读不到 stdout 行，报
+  `pi-osworld process closed unexpectedly`，`reset failed`，任务失败、VM 被 discard。
+- 原因：`python/pi_osworld_adapter_v2.py` 的 `_default_command()` 默认分支返回
+  `[node, dist/cli.js, "serve"]`（带了子命令），但 `PI_OSWORLD_V2_CLI` 分支只返回
+  `configured.split()`（`node + 脚本`，漏了 `serve`）；而 `_ensure_process` 直接拼
+  `--config ...`。于是实际命令变成 `node dist/cli/index.js --config <yaml> ...`，
+  CLI 的 `parseArgs` 把 `--config` 当成未知子命令 → 走 `usage()` 分支退出。
+- 修复：v2 adapter 与旧 adapter 对齐——`_default_command()` 只返回 `node + 脚本`，
+  `_ensure_process()` 统一在 `--config` 前追加 `serve` 子命令（旧版是追加 `run`）。
+  现在 `PI_OSWORLD_V2_CLI` 只写 `node <dist>/cli/index.js`，不要带子命令。
+- 避免：serve 起不来看日志先确认最终 argv（本地可
+  `node dist/cli/index.js serve --config <yaml> --root . --result-dir /tmp/x < /dev/null`
+  复现）；默认分支与 env 覆盖分支的返回结构要保持一致，子命令只在一个地方拼。
+
+## 坑 8：`pkill -f` 会误杀自己所在的 ssh 会话（待补充，2026-08-12）
+
+- 现象：用 `pkill -f run_v2_cluster` 清残留进程时，命令模式串会匹配到
+  `sshpass ... ssh root@47.120.53.174 ...` 这条 ssh 命令行本身，把自己会话杀掉。
+- 避免：清残留用精确匹配，例如
+  `ps aux | grep "[r]un_v2_cluster"` 先看 PID 再 `kill <pid>`，或
+  `pkill -f "python /home/zhilongli/OSWorld-V2/.venv/bin/python /home/zhilongli/pi-osworld-v2/python/run_v2_cluster.py"`；
+  不要用宽泛的 `pkill -f run_v2_cluster`。
+
+## 坑 9：git bundle 放 /tmp 后 zhilongli 读不了（待补充，2026-08-12）
+
+- 现象：bundle 生成在 `/tmp`，root 创建默认 600 权限；`su zhilongli -c "git fetch <bundle>..."`
+  报 permission denied。
+- 避免：bundle 直接生成/复制到 zhilongli 家目录（如 `/home/zhilongli/`）并
+  `chown zhilongli:zhilongli`，再 `su zhilongli -c "git fetch <bundle> main && git merge --ff-only FETCH_HEAD"`。
