@@ -1,0 +1,18 @@
+# stateact-qwen 的调试变体：换 debug-12 子集，缩短步数、关 checkpoint、默认 4 env，
+# 加快 harness 调试轮次。结果目录 model 标签为 stateact-qwen-debug，与正式实验隔离。
+extends: stateact-qwen.yaml
+
+experiment: stateact-qwen-debug
+
+task_set: task-sets/debug-12.yaml
+
+runtime:
+  num_envs: 4
+
+loop:
+  total_rounds: 150
+
+termination:
+  max_steps: 150
+  checkpoint_eval_mode: off
+  checkpoint_steps: []

@@ -67,6 +67,20 @@ export function serializeSource(
       return `## Environment state\n${
         obs.terminal ? `terminal:\n${obs.terminal}` : "(no terminal output)"
       }`;
+    case "progress_snapshot": {
+      const executed = state.rounds;
+      const last = executed[executed.length - 1];
+      const recentDecisions = executed
+        .slice(-10)
+        .map((r) => r.decision.kind)
+        .join(", ");
+      return [
+        "## Progress snapshot",
+        `rounds executed: ${executed.length}`,
+        `latest round: ${last ? `${last.index} (decision ${last.decision.kind})` : "(none)"}`,
+        `recent decisions: ${recentDecisions || "(none)"}`,
+      ].join("\n");
+    }
   }
 }
 
@@ -100,12 +114,14 @@ export function buildRoleMessage(
   ctx: RoundContext,
   obs: ObservationEnvelope,
   feedback?: string,
+  auditFeedback?: string,
 ): string {
   const parts: string[] = [];
   for (const source of role.receives ?? defaultReceives(role)) {
     parts.push(serializeSource(source, ctx, obs));
   }
   if (feedback) parts.push(`## Verifier feedback\n${feedback}`);
+  if (auditFeedback) parts.push(`## Progress audit\n${auditFeedback}`);
   if (obs.terminal && !role.receives?.includes("env_state")) {
     parts.push(`## Terminal\n${obs.terminal}`);
   }
@@ -167,13 +183,14 @@ export class Runtime implements RuntimeServices {
     ctx: RoundContext,
     obs: ObservationEnvelope,
     feedback?: string,
+    auditFeedback?: string,
   ): Promise<EpisodeResult> {
     const role = this.spec.roles[roleId];
     if (!role) throw new Error(`unknown role: ${roleId}`);
     const backend = this.backends[roleId];
     if (!backend) throw new Error(`no backend for role ${roleId}`);
     const system = loadPromptText(role.prompt.system, this.root);
-    const user = buildRoleMessage(role, ctx, obs, feedback);
+    const user = buildRoleMessage(role, ctx, obs, feedback, auditFeedback);
     const req: EpisodeRequest = {
       episodeId: ctx.episodeId,
       role: roleId,
@@ -186,6 +203,7 @@ export class Runtime implements RuntimeServices {
       task: ctx.state.goal,
       observation: obs,
       ...(feedback ? { feedback } : {}),
+      ...(auditFeedback ? { auditFeedback } : {}),
     };
     await this.debugger?.onRoleStart(roleId, req);
     this.emit("role.start", { role: roleId, round: ctx.index });

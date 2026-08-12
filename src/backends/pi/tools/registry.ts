@@ -2,6 +2,7 @@ import type { Tool } from "@earendil-works/pi-ai";
 import { computerAskUserTool, computerTools } from "./computer.js";
 import {
   askUserTool,
+  auditSubmitTool,
   completeDelegationTool,
   delegateGuiTool,
   failTool,
@@ -45,6 +46,7 @@ const TOOL_DEFS: Record<string, Tool> = {
   "computer.ask_user": computerAskUserTool,
   "ask_user.request": askUserTool,
   "finish_gate.verdict": finishGateVerdictTool,
+  "audit.submit": auditSubmitTool,
   "plan.update": planUpdateTool,
 };
 

@@ -1,0 +1,19 @@
+# stateact-qwen-audit-debug 的冒烟变体：单任务、1 env、短步数、高频审计，
+# 用于验证 audit.submit 链路在主控机集群环境跑通。
+extends: stateact-qwen-audit-debug.yaml
+
+experiment: stateact-qwen-audit-smoke
+
+task_set: task-sets/smoke-001.yaml
+
+runtime:
+  num_envs: 1
+
+loop:
+  total_rounds: 30
+  audit_every: 5
+
+termination:
+  max_steps: 30
+  checkpoint_eval_mode: off
+  checkpoint_steps: []

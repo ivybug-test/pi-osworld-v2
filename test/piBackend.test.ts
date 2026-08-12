@@ -5,6 +5,7 @@ import {
   buildStateText,
   isWriteTool,
 } from "../src/backends/pi/backend.js";
+import { resolveTools } from "../src/backends/pi/tools/registry.js";
 
 // ---------------------------------------------------------------------------
 // A4：消息拼法（与旧 flow 逐字段对齐，纯函数，无外部 fixture）
@@ -50,5 +51,17 @@ describe("message parity (A4)", () => {
     expect(isWriteTool("state.edit_file")).toBe(true);
     expect(isWriteTool("state.python")).toBe(true);
     expect(isWriteTool("state.read_file")).toBe(false);
+  });
+
+  it("resolveTools maps the read-only auditor set: state.inspect_ro + audit.submit", () => {
+    const tools = resolveTools(["state.inspect_ro", "audit.submit"]);
+    const names = tools.map((t) => t.name);
+    expect(names).toContain("state.read_file");
+    expect(names).toContain("state.python");
+    expect(names).toContain("state.terminal");
+    expect(names).toContain("audit.submit");
+    // 只读集不含写工具
+    expect(names).not.toContain("state.write_file");
+    expect(names).not.toContain("state.bash");
   });
 });

@@ -1,0 +1,51 @@
+# stateact-qwen-debug + 周期进度审计（auditor）。
+# auditor 每 loop.audit_every 轮以 fresh context 只读检查环境，从需求覆盖 /
+# 目标对齐 / 执行健康 / 持久化四个维度评价进度，反馈注入 main 本轮消息。
+extends: stateact-qwen-debug.yaml
+
+experiment: stateact-qwen-audit-debug
+
+models:
+  auditor: qwen-gateway/qwen3.7-plus
+
+roles:
+  auditor:
+    backend: pi
+    model: auditor
+    model_options:
+      temperature: 0.6
+      max_tokens: 8192
+      thinking_mode: adaptive
+    prompt:
+      system: prompts/roles/audit-progress.md
+      append:
+        - prompts/shared/osworld-environment.md
+    observation:
+      allow: [state, terminal]
+    context:
+      fresh_per_round: true
+      context_window: 200000
+      compaction:
+        strategy: m3-image-truncation
+        image_truncation:
+          screenshot_turns: 10
+          chunk_size: 20
+          placeholder: "Tool result: Success"
+    memory: none
+    tools: [state.inspect_ro, audit.submit]
+    permissions:
+      mode: read_only
+      tools:
+        state.python: readonly
+        state.bash: deny
+        state.write_file: deny
+        state.edit_file: deny
+    receives: [task, task_state, audit_history, progress_snapshot, env_state]
+    interior_loop: true
+    terminal_tools: [audit.submit]
+    read_only: enforce
+    budget: { max_steps: 40 }
+
+loop:
+  audit_every: 10
+  audit_role: auditor

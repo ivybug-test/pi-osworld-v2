@@ -31,6 +31,8 @@ export class Orchestrator {
   private feedback: string | undefined;
   /** gate_verdict 驱动的拒绝次数（达到 loop.max_rounds 后放行 DONE）。 */
   private gateRejections = 0;
+  /** 周期进度审计反馈（独立于 finish gate；注入 feedback_to 角色本轮消息）。 */
+  private auditFeedback: string | undefined;
 
   constructor(
     private readonly spec: HarnessSpec,
@@ -55,7 +57,8 @@ export class Orchestrator {
     // 这样 gate_verdict 的 max_rounds 和下一轮 feedback 能跨 predict 延续。
     this.gateRejections = existing?.gate?.rejections ?? 0;
     this.feedback = existing?.gate?.feedback;
-    const state =
+    this.auditFeedback = existing?.audit?.feedback;
+    let state =
       existing ??
       createTaskState(
         input.task,
@@ -83,7 +86,24 @@ export class Orchestrator {
       runtime.emit("round.start", { episodeId: input.episodeId, round });
       await dbg?.onRoundStart(ctx);
 
+      // 周期进度审计：gate_verdict + audit_every 时，非终局轮按间隔只读检查进度
+      await this.maybeRunAudit(ctx, obs);
+
       const outcome = await this.driveRound(ctx, obs);
+      // 让下一轮 ctx 看到最新状态（driveRound 已把 ctx.state 更新为 appendRound 结果）
+      state = ctx.state;
+
+      // 审计反馈只注入本轮；消费后清除持久化字段，避免 serve 下一 predict 重复注入
+      if (outcome.kind === "execute" && this.auditFeedback) {
+        this.auditFeedback = undefined;
+        const fresh = (await runtime.readState(input.episodeId)) ?? ctx.state;
+        if (fresh.audit) {
+          await runtime.writeState(input.episodeId, {
+            ...fresh,
+            audit: { ...fresh.audit, feedback: undefined },
+          });
+        }
+      }
 
       runtime.emit("round.decision", {
         episodeId: input.episodeId,
@@ -187,6 +207,7 @@ export class Orchestrator {
       ctx,
       obs,
       this.feedback,
+      this.auditFeedback,
     );
     const decision = result.decision ?? defaultDecision(result);
     ctx.executorReport = result.report;
@@ -209,7 +230,7 @@ export class Orchestrator {
       const round: RoundRecord = {
         index: ctx.index,
         executorReport: result.report,
-        auditReport: gateResult.auditReport,
+        auditReport: gateResult.auditReport ?? ctx.auditReport,
         decision: ctx.decision,
         ...(result.metadata ? { metadata: result.metadata } : {}),
       };
@@ -246,12 +267,63 @@ export class Orchestrator {
     const round: RoundRecord = {
       index: ctx.index,
       executorReport: result.report,
+      ...(ctx.auditReport ? { auditReport: ctx.auditReport } : {}),
       decision,
       ...(result.metadata ? { metadata: result.metadata } : {}),
     };
     const updated = await runtime.appendRound(ctx.episodeId, round);
     ctx.state = updated;
     return { kind: "execute" };
+  }
+
+  // -------------------------------------------------------------------------
+  // 周期进度审计（gate_verdict + loop.audit_every）：
+  // 每隔 N 轮以只读 auditor 角色检查当前进度（fresh context，不见 executor 叙述），
+  // 从需求覆盖/目标对齐/执行健康/持久化多个角度给出反馈，注入 feedback_to 本轮消息。
+  // 报告挂在本轮 round 记录上并持久化到 state.audit（serve 跨 predict 可恢复）。
+  // -------------------------------------------------------------------------
+
+  private async maybeRunAudit(
+    ctx: RoundContext,
+    obs: ObservationEnvelope,
+  ): Promise<void> {
+    const loop = this.spec.loop;
+    if (loop.driver !== "gate_verdict") return;
+    if (!loop.audit_every) return;
+    if (ctx.index % loop.audit_every !== 0) return;
+    if (!loop.audit_role) {
+      throw new Error("loop.audit_every requires loop.audit_role");
+    }
+    const { runtime } = this.options;
+    const auditResult = await runtime.runRoleEpisode(loop.audit_role, ctx, obs);
+    const audit = auditResult.auditReport;
+    if (!audit) {
+      throw new Error(
+        `auditor role ${loop.audit_role} returned no audit report`,
+      );
+    }
+    ctx.auditReport = audit;
+    this.auditFeedback =
+      audit.feedback ??
+      (audit.gaps.length
+        ? audit.gaps.join("; ")
+        : "progress looks on track; keep going");
+    runtime.emit("round.audit", {
+      episodeId: ctx.episodeId,
+      round: ctx.index,
+      completion: audit.completion,
+      integrity: audit.integrity,
+      contractAudit: audit.contractAudit,
+      gaps: audit.gaps.length,
+    });
+    await runtime.writeState(ctx.episodeId, {
+      ...ctx.state,
+      audit: {
+        lastRound: ctx.index,
+        report: audit,
+        feedback: this.auditFeedback,
+      },
+    });
   }
 
   // -------------------------------------------------------------------------

@@ -83,6 +83,55 @@ describe("HarnessSpec schema", () => {
       HarnessSpec.parse({ ...baseMea, loop: { ...baseMea.loop, driver: "nope" } }),
     ).toThrow();
   });
+
+  it("parses gate_verdict with periodic audit fields (audit_every/audit_role)", () => {
+    const spec = HarnessSpec.parse({
+      ...baseMea,
+      roles: {
+        main: {
+          model: "main",
+          prompt: { system: "m.md" },
+          observation: { allow: ["state"] },
+          tools: [],
+          receives: ["task"],
+        },
+        finish_gate: {
+          model: "finish_gate",
+          prompt: { system: "g.md" },
+          observation: { allow: ["state"] },
+          tools: ["state.inspect_ro"],
+          receives: ["task"],
+          read_only: "enforce",
+        },
+        auditor: {
+          model: "auditor",
+          prompt: { system: "a.md" },
+          observation: { allow: ["state"] },
+          tools: ["state.inspect_ro", "audit.submit"],
+          receives: ["task", "task_state", "audit_history", "progress_snapshot", "env_state"],
+          interior_loop: true,
+          terminal_tools: ["audit.submit"],
+          read_only: "enforce",
+        },
+      },
+      gates: { finish: { role: "finish_gate", verdict_tool: "finish_gate.verdict", fresh_context: true } },
+      loop: {
+        driver: "gate_verdict",
+        gate: "finish",
+        feedback_to: "main",
+        max_rounds: 3,
+        audit_every: 10,
+        audit_role: "auditor",
+      },
+    });
+    expect(spec.loop.driver).toBe("gate_verdict");
+    if (spec.loop.driver === "gate_verdict") {
+      expect(spec.loop.audit_every).toBe(10);
+      expect(spec.loop.audit_role).toBe("auditor");
+    }
+    expect(spec.roles.auditor.receives).toContain("progress_snapshot");
+    expect(spec.roles.auditor.terminal_tools).toEqual(["audit.submit"]);
+  });
 });
 
 describe("config load + extends", () => {

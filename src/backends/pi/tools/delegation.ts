@@ -59,3 +59,33 @@ export const finishGateVerdictTool: Tool = {
     ),
   }),
 };
+
+export const auditSubmitTool: Tool = {
+  name: "audit.submit",
+  description:
+    "Submit a periodic progress audit. Only call this after inspecting the environment read-only. You make no accept/reject decision; you give the main agent concrete steering feedback.",
+  parameters: Type.Object({
+    completion: Type.String({
+      description: "complete | incomplete | blocked",
+    }),
+    integrity: Type.String({
+      description: "clean | suspect | violation",
+    }),
+    contract_audit: Type.Optional(
+      Type.String({
+        description: "aligned | needs_revision | invalid",
+      }),
+    ),
+    gaps: Type.Optional(
+      Type.Array(
+        Type.String({ description: "Concrete, observable issue or gap" }),
+      ),
+    ),
+    feedback: Type.Optional(
+      Type.String({
+        description:
+          "Short actionable feedback for the main agent (what to check / what to do next). Omit or keep brief when progress is on track.",
+      }),
+    ),
+  }),
+};

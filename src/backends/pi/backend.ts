@@ -288,6 +288,55 @@ export class PiBackend implements BackendAdapter {
             decision: { kind: "execute" },
           };
         }
+        // 周期进度审计报告（audit.submit：只读 auditor 的终结工具，非 verdict）
+        if (this.isAuditTool(req.role, call.name)) {
+          const args = call.arguments;
+          const completion =
+            args.completion === "complete"
+              ? "complete"
+              : args.completion === "blocked"
+                ? "blocked"
+                : "incomplete";
+          const integrity =
+            args.integrity === "violation"
+              ? "violation"
+              : args.integrity === "suspect"
+                ? "suspect"
+                : "clean";
+          const contractAudit =
+            args.contract_audit === "invalid"
+              ? "invalid"
+              : args.contract_audit === "needs_revision"
+                ? "needs_revision"
+                : "aligned";
+          const report = assistantTextForArgs(call.arguments);
+          this.emit("audit.submit", {
+            episode_id: req.episodeId,
+            step: req.roundIndex,
+            role: req.role,
+            completion,
+            integrity,
+            contract_audit: contractAudit,
+            gaps: Array.isArray(args.gaps) ? args.gaps.map(String) : [],
+          });
+          return {
+            status: "done",
+            report,
+            decision: { kind: "execute" },
+            auditReport: {
+              roundId: `round-${req.roundIndex}`,
+              completion,
+              integrity,
+              contractAudit,
+              verifiedFacts: [],
+              gaps: Array.isArray(args.gaps) ? args.gaps.map(String) : [],
+              evidence: report ? [report] : [],
+              ...(typeof args.feedback === "string" && args.feedback
+                ? { feedback: args.feedback }
+                : {}),
+            },
+          };
+        }
         // 其他终结构造工具（如 finish_gate.verdict）
         if (this.isVerdictTool(req.role, call.name)) {
           this.emit("finish_gate.verdict", {
@@ -405,9 +454,13 @@ export class PiBackend implements BackendAdapter {
             return req.user;
         }
       })();
-      return req.feedback
-        ? `${base}\n\n## Verifier feedback\n${req.feedback}`
-        : base;
+      const feedbackText = [
+        req.feedback ? `## Verifier feedback\n${req.feedback}` : null,
+        req.auditFeedback ? `## Progress audit\n${req.auditFeedback}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      return feedbackText ? `${base}\n\n${feedbackText}` : base;
     })();
     return {
       role: "user",
@@ -548,6 +601,15 @@ export class PiBackend implements BackendAdapter {
     if (spec.loop.driver !== "gate_verdict") return false;
     const gate = spec.gates?.[spec.loop.gate];
     return Boolean(gate && gate.role === roleId && gate.verdict_tool === name);
+  }
+
+  private isAuditTool(roleId: string, name: string): boolean {
+    const loop = this.options.spec.loop;
+    return (
+      loop.driver === "gate_verdict" &&
+      loop.audit_role === roleId &&
+      name === "audit.submit"
+    );
   }
 
   private emit(event: string, attrs: Record<string, unknown>): void {

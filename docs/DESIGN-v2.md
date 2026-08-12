@@ -71,7 +71,7 @@ roles:
     tools: [state.inspect, state.bash, ...]   # 引用工具组
     observation: { allow: [state, screenshot, a11y, terminal], deny: [...] }
     context: fresh_per_round | persistent | <策略>
-    receives: [task, task_state, contract, evidence_refs, executor_report, audit_history, env_state]
+    receives: [task, task_state, contract, evidence_refs, executor_report, audit_history, env_state, progress_snapshot]
     read_only: enforce | none          # 执行层强制（见 4.5）
     budget: { max_seconds, max_steps, max_cost_usd }
 
@@ -95,6 +95,8 @@ loop:
   routing: { gui: gui_executor, cli: executor }   # 契约 target 路由
   # driver=gate_verdict 时：
   verdict: { gate: finish, feedback_to: main, max_rounds: 3 }
+  audit_every: 10                   # 周期进度审计：每隔 N 轮跑一次（可选）
+  audit_role: auditor               # 周期审计角色 id（read_only 角色，可选）
 
 termination:
   on: [done, blocked, ask, max_rounds, timeout]
