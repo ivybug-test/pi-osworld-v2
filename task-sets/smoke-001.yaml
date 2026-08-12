@@ -1,3 +1,5 @@
-# 冒烟子集：单任务 001（harness 调试用）
+# 冒烟子集：单任务 001（harness 调试用）。
+# 注意：任务 id 必须用 task_NNN 字符串；裸 001 会被 YAML 解析成数字 1，
+# 导致 run_v2_cluster 找不到任务文件。
 tasks:
-  - 001
+  - task_001

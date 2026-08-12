@@ -41,6 +41,16 @@
   `evaluation_examples/task_class/task_001.py`，任务照常加载，不需要 json。
 - 避免：看到任务 json 缺失不要慌，先确认 `task_class/task_<id>.py` 存在。
 
+## 坑 6：task-set 的任务 id 必须写成 `task_NNN` 字符串
+
+- 现象：冒烟在 `load_task_config` 报
+  `FileNotFoundError: .../examples_v2_backup/1.json`，且 VM 被 discard。
+- 原因：`task-sets/smoke-001.yaml` 里裸写 `- 001`，YAML 解析成整数 `1`，
+  `str(1)="1"` 丢了前导零，任务文件找不到（还白创建了一台 ECS）。
+- 修复：照官方 `task-sets/smoke.yaml` 的写法用 `- task_001`（字符串），
+  `run_v2_cluster._normalize_task_id` 会去掉前缀得到 `001`。
+- 避免：task-set 一律写 `task_<id>` 字符串，不要写裸数字。
+
 ## 冒烟启动模板（1 env，max_steps 调小）
 
 ```bash
