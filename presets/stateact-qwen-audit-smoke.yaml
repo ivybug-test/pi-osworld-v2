@@ -11,7 +11,7 @@ runtime:
 
 loop:
   total_rounds: 30
-  audit_every: 5
+  audit_every: 1
 
 termination:
   max_steps: 30
