@@ -41,7 +41,10 @@ export interface ToolLoopOptions {
   maxToolCalls?: number;
   transform?: (messages: Message[]) => Message[];
   /** Called after every model completion; return false to stop the loop early. */
-  afterTurn?: (turn: number, costUsd: number) => boolean | void;
+  afterTurn?: (
+    turn: number,
+    costUsd: number,
+  ) => boolean | void | Promise<boolean | void>;
 }
 
 /**
@@ -195,7 +198,7 @@ export class RoleAgent {
         cost_usd: assistant.usage.cost.total,
       });
 
-      if (options.afterTurn?.(this.turnCount, this.costUsd) === false) {
+      if ((await options.afterTurn?.(this.turnCount, this.costUsd)) === false) {
         return assistant;
       }
 

@@ -33,6 +33,8 @@ export class Orchestrator {
   private gateRejections = 0;
   /** 周期进度审计反馈（独立于 finish gate；注入 feedback_to 角色本轮消息）。 */
   private auditFeedback: string | undefined;
+  /** 周期进度审计：最近一次审计时的 main agent 累计轮次（turn 基触发）。 */
+  private auditLastTurns = 0;
 
   constructor(
     private readonly spec: HarnessSpec,
@@ -58,6 +60,7 @@ export class Orchestrator {
     this.gateRejections = existing?.gate?.rejections ?? 0;
     this.feedback = existing?.gate?.feedback;
     this.auditFeedback = existing?.audit?.feedback;
+    this.auditLastTurns = existing?.audit?.lastAuditTurns ?? 0;
     let state =
       existing ??
       createTaskState(
@@ -86,24 +89,9 @@ export class Orchestrator {
       runtime.emit("round.start", { episodeId: input.episodeId, round });
       await dbg?.onRoundStart(ctx);
 
-      // 周期进度审计：gate_verdict + audit_every 时，非终局轮按间隔只读检查进度
-      await this.maybeRunAudit(ctx, obs);
-
       const outcome = await this.driveRound(ctx, obs);
       // 让下一轮 ctx 看到最新状态（driveRound 已把 ctx.state 更新为 appendRound 结果）
       state = ctx.state;
-
-      // 审计反馈只注入本轮；消费后清除持久化字段，避免 serve 下一 predict 重复注入
-      if (outcome.kind === "execute" && this.auditFeedback) {
-        this.auditFeedback = undefined;
-        const fresh = (await runtime.readState(input.episodeId)) ?? ctx.state;
-        if (fresh.audit) {
-          await runtime.writeState(input.episodeId, {
-            ...fresh,
-            audit: { ...fresh.audit, feedback: undefined },
-          });
-        }
-      }
 
       runtime.emit("round.decision", {
         episodeId: input.episodeId,
@@ -202,13 +190,29 @@ export class Orchestrator {
     const gateSpec = this.spec.gates?.[loop.gate];
     if (!gateSpec) throw new Error(`gate ${loop.gate} is not defined in gates`);
 
+    // 审计反馈只在本轮 main 消息注入一次；消费后清除持久化字段，
+    // 避免 serve 下一 predict 重复注入（本轮中途新产生的审计反馈保留到下一轮）。
+    const injectedAuditFeedback = this.auditFeedback;
     const result = await runtime.runRoleEpisode(
       loop.feedback_to,
       ctx,
       obs,
       this.feedback,
-      this.auditFeedback,
+      injectedAuditFeedback,
+      loop.audit_every && loop.audit_role
+        ? (turn) => this.maybeRunAudit(ctx, obs, turn)
+        : undefined,
     );
+    if (injectedAuditFeedback) {
+      this.auditFeedback = undefined;
+      const fresh = (await runtime.readState(ctx.episodeId)) ?? ctx.state;
+      if (fresh.audit?.feedback === injectedAuditFeedback) {
+        await runtime.writeState(ctx.episodeId, {
+          ...fresh,
+          audit: { ...fresh.audit, feedback: undefined },
+        });
+      }
+    }
     const decision = result.decision ?? defaultDecision(result);
     ctx.executorReport = result.report;
 
@@ -226,7 +230,6 @@ export class Orchestrator {
       ctx.decision = verdict.accepted
         ? { kind: "done" }
         : { kind: "execute" };
-      ctx.auditReport = gateResult.auditReport;
       const round: RoundRecord = {
         index: ctx.index,
         executorReport: result.report,
@@ -278,22 +281,25 @@ export class Orchestrator {
 
   // -------------------------------------------------------------------------
   // 周期进度审计（gate_verdict + loop.audit_every）：
-  // 每隔 N 轮以只读 auditor 角色检查当前进度（fresh context，不见 executor 叙述），
+  // 每隔 N 次 main agent 模型调用（turn）以只读 auditor 角色检查当前进度
+  // （fresh context，不见 executor 叙述），
   // 从需求覆盖/目标对齐/执行健康/持久化多个角度给出反馈，注入 feedback_to 本轮消息。
-  // 报告挂在本轮 round 记录上并持久化到 state.audit（serve 跨 predict 可恢复）。
+  // 报告挂在本轮 round 记录上并持久化到 state.audit（serve 跨 predict 可恢复）；
+  // 反馈在本轮结束后注入下一轮 main 消息（同一 round 内已建好的消息不重开）。
   // -------------------------------------------------------------------------
 
   private async maybeRunAudit(
     ctx: RoundContext,
     obs: ObservationEnvelope,
+    turn: number,
   ): Promise<void> {
     const loop = this.spec.loop;
     if (loop.driver !== "gate_verdict") return;
     if (!loop.audit_every) return;
-    if (ctx.index % loop.audit_every !== 0) return;
     if (!loop.audit_role) {
       throw new Error("loop.audit_every requires loop.audit_role");
     }
+    if (turn - this.auditLastTurns < loop.audit_every) return;
     const { runtime } = this.options;
     const auditResult = await runtime.runRoleEpisode(loop.audit_role, ctx, obs);
     const audit = auditResult.auditReport;
@@ -316,10 +322,12 @@ export class Orchestrator {
       contractAudit: audit.contractAudit,
       gaps: audit.gaps.length,
     });
+    this.auditLastTurns = turn;
     await runtime.writeState(ctx.episodeId, {
       ...ctx.state,
       audit: {
         lastRound: ctx.index,
+        lastAuditTurns: turn,
         report: audit,
         feedback: this.auditFeedback,
       },

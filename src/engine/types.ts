@@ -49,8 +49,14 @@ export interface TaskState {
   facts: FactRecord[];
   /** gate_verdict 驱动跨 predict 持久化的拒绝计数与待注入 feedback。 */
   gate?: { rejections: number; feedback?: string };
-  /** 周期进度审计：最近一次审计轮次、报告与待注入 main 的反馈（serve 跨 predict 恢复用）。 */
-  audit?: { lastRound: number; feedback?: string; report?: AuditReport };
+  /** 周期进度审计：最近一次审计轮次/轮次基数、报告与待注入 main 的反馈（serve 跨 predict 恢复用）。 */
+  audit?: {
+    lastRound: number;
+    /** 最近一次审计时的 main agent 累计轮次（模型 turn 数），turn 基触发用。 */
+    lastAuditTurns?: number;
+    feedback?: string;
+    report?: AuditReport;
+  };
   rounds: RoundRecord[];
 }
 
@@ -133,6 +139,8 @@ export interface EpisodeRequest {
   feedback?: string;
   /** 最近一次周期审计反馈（注入 feedback_to 角色消息；独立于 finish gate 的拒绝反馈）。 */
   auditFeedback?: string;
+  /** main 角色 interior loop 内每完成一次模型调用回调（turn 基周期审计钩子）。 */
+  onTurn?: (turn: number, costUsd: number) => boolean | void | Promise<boolean | void>;
 }
 
 export interface EpisodeResult {
@@ -169,6 +177,7 @@ export interface RuntimeServices {
     obs: ObservationEnvelope,
     feedback?: string,
     auditFeedback?: string,
+    onTurn?: (turn: number, costUsd: number) => boolean | void | Promise<boolean | void>,
   ): Promise<EpisodeResult>;
   readState(episodeId: string): Promise<TaskState | undefined>;
   writeState(episodeId: string, state: TaskState): Promise<void>;

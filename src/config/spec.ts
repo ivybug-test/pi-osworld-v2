@@ -171,7 +171,8 @@ export const LoopSpec = z.discriminatedUnion("driver", [
     max_rounds: z.number().int().positive().default(3), // 拒绝/修复轮上限
     total_rounds: z.number().int().positive().optional(), // 总轮硬上限（默认 100）
     min_steps_before_finish: z.number().int().nonnegative().optional(), // finish 前最少非终结步数（stateact）
-    // 周期进度审计：每隔 audit_every 轮，以 audit_role 只读检查进度并反馈给 feedback_to。
+    // 周期进度审计：每隔 audit_every 次 main agent 模型调用（turn），
+    // 以 audit_role 只读检查进度并反馈给 feedback_to（turn 基，非 predict/step 基）。
     audit_every: z.number().int().positive().optional(),
     audit_role: z.string().optional(),
     // 拒绝轮耗尽时的放行语义：blocked=FAIL（旧 stateact 行为，默认）；done=强制放行

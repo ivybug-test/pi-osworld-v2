@@ -1,5 +1,5 @@
 # stateact-qwen-debug + 周期进度审计（auditor）。
-# auditor 每 loop.audit_every 轮以 fresh context 只读检查环境，从需求覆盖 /
+# auditor 每 loop.audit_every 次 main 模型调用（turn）以 fresh context 只读检查环境，从需求覆盖 /
 # 目标对齐 / 执行健康 / 持久化四个维度评价进度，反馈注入 main 本轮消息。
 extends: stateact-qwen-debug.yaml
 

@@ -18,16 +18,25 @@ export type MockStep =
   | { type: "audit"; report: string; auditReport: AuditReport }
   | { type: "verdict"; accepted: boolean; feedback?: string };
 
+/** 角色单次 episode 内模拟的模型调用（turn）数；默认 1。 */
+export interface MockTurns {
+  turns?: number;
+}
+
+export type MockStepWithTurns = MockStep & MockTurns;
+
 export interface MockBackendOptions {
-  behaviors: Record<string, MockStep[] | MockStep>;
+  behaviors: Record<string, MockStepWithTurns[] | MockStepWithTurns>;
   /** 未配置的角色返回空报告（status done）。 */
   defaultResult?: EpisodeResult;
 }
 
 export class MockBackend implements BackendAdapter {
   readonly id: BackendId = "mock";
-  private readonly behaviors: Record<string, MockStep[]>;
+  private readonly behaviors: Record<string, MockStepWithTurns[]>;
   private readonly defaultResult: EpisodeResult;
+  /** 每个角色累计模拟 turn（跨 runEpisode 调用保持，模拟 serve 内 agent 持久计数）。 */
+  private readonly simTurns: Record<string, number> = {};
 
   constructor(options: MockBackendOptions) {
     this.behaviors = Object.fromEntries(
@@ -47,6 +56,14 @@ export class MockBackend implements BackendAdapter {
     if (!steps || steps.length === 0) return structuredClone(this.defaultResult);
     const idx = Math.min(Math.max(req.roundIndex - 1, 0), steps.length - 1);
     const step = steps[idx];
+    if (req.onTurn) {
+      const count = step.turns ?? 1;
+      for (let i = 0; i < count; i += 1) {
+        this.simTurns[req.role] = (this.simTurns[req.role] ?? 0) + 1;
+        const stop = await req.onTurn(this.simTurns[req.role], 0);
+        if (stop === false) break;
+      }
+    }
     switch (step.type) {
       case "decision":
         return { status: "done", decision: step.decision };

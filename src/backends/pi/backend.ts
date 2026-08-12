@@ -152,6 +152,7 @@ export class PiBackend implements BackendAdapter {
               ? (messages) =>
                   this.refreshStateText(messages, req, input, liveObs, session.plan)
               : undefined,
+          afterTurn: req.onTurn,
         },
       );
     } catch (error) {

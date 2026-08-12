@@ -184,6 +184,7 @@ export class Runtime implements RuntimeServices {
     obs: ObservationEnvelope,
     feedback?: string,
     auditFeedback?: string,
+    onTurn?: EpisodeRequest["onTurn"],
   ): Promise<EpisodeResult> {
     const role = this.spec.roles[roleId];
     if (!role) throw new Error(`unknown role: ${roleId}`);
@@ -204,6 +205,7 @@ export class Runtime implements RuntimeServices {
       observation: obs,
       ...(feedback ? { feedback } : {}),
       ...(auditFeedback ? { auditFeedback } : {}),
+      ...(onTurn ? { onTurn } : {}),
     };
     await this.debugger?.onRoleStart(roleId, req);
     this.emit("role.start", { role: roleId, round: ctx.index });
