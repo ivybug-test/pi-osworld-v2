@@ -56,7 +56,6 @@ export function convertLegacySpec(raw: RawRecord): RawRecord {
       role.refresh_state = true;
     }
     if (topology === "stateact-minimal" && id === "finish_gate") {
-      role.message_style = "gate";
       role.interior_loop = true;
       role.terminal_tools = ["finish_gate.verdict"];
       role.read_only = "enforce";

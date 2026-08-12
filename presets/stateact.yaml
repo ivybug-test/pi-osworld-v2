@@ -129,8 +129,7 @@ roles:
         state.bash: deny
         state.write_file: deny
         state.edit_file: deny
-    receives: [task, contract, executor_report]
-    message_style: gate
+    receives: [task, contract, executor_report, audit_evidence]
     interior_loop: true
     terminal_tools: [finish_gate.verdict]
     read_only: enforce

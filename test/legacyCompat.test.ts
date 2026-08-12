@@ -84,7 +84,6 @@ describe("legacyCompat: 旧 agents/topology YAML → v2 HarnessSpec", () => {
       message_style: "state_text",
     });
     expect(spec.roles.finish_gate).toMatchObject({
-      message_style: "gate",
       terminal_tools: ["finish_gate.verdict"],
       read_only: "enforce",
     });

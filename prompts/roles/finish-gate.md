@@ -20,6 +20,8 @@ Rules:
 - Locate the real deliverable the task names (file, application state, or DOM)
   and inspect it read-only with state.python / state.read_file /
   state.view_image / state.terminal. Never modify, create, or delete anything.
+- Never assume completion from the executor report or any narration — the
+  verdict is based on what the persisted artifact actually contains.
 - Verify the artifact against the task instruction: the required content
   exists, format is correct, conflicting entries are gone, and nothing
   required is missing. The executor's self-report and the audit evidence are
