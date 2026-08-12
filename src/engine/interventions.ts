@@ -9,7 +9,7 @@ export interface InterventionEntry {
   round?: number;
 }
 
-/** 追加一条调试干预记录；供 debug/replay 追溯人工修改。 */
+/** 追加一条调试干预记录；供 debug 追溯人工修改。 */
 export function appendIntervention(
   resultDir: string,
   entry: InterventionEntry,

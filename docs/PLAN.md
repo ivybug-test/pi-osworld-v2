@@ -32,7 +32,7 @@
 | B3 | `serve` 命令：JSONL bridge（复用旧 `BridgeRequest/BridgeResponse` 类型），每次 `predict` = v2 一轮 + FileTaskStateStore resume | 冒烟：`serve` 下 mock 跑 3 个 step，状态跨 step 延续 |
 | B4 | observation 文件/JSON 传入通道 + 事件落盘（events.jsonl 每 step 追加） | 冒烟：step 驱动 run 产物完整 |
 
-**阶段验收**：python 侧 fake VM 通过 `serve` 驱动 v2 完成多 step 任务，轨迹可 replay。
+**阶段验收**：python 侧 fake VM 通过 `serve` 驱动 v2 完成多 step 任务，轨迹产物完整。
 
 ## Phase C — OSWorld-V2 复现闭环（回答"什么时候能复现"）
 
@@ -75,7 +75,7 @@ git submodule 形式引用官方仓库，实验配置树（experiments / task-se
 **阶段验收**：`git clone` v2 → `scripts/setup.sh` → 用 `presets/stateact.yaml` +
 `--config-root .` + `--osworld-root external/OSWorld-V2` 跑通 mock/dry-run。
 
-## Phase F — 集群适配（详细计划见 CLUSTER-PLAN.md）
+## Phase F — 集群适配（详细计划见 docs/CLUSTER-PLAN.md）
 
 目标：先依赖同事 fork 作为 `external/OSWorld-V2` submodule 跑通 Aliyun + OSS +
 parametrix 集群实验；跑通后在 Phase F4 把集群增量收进 v2，换回官方 submodule。
@@ -100,10 +100,10 @@ parametrix 集群实验；跑通后在 Phase F4 把集群增量收进 v2，换�
 | # | 任务 | 验证 |
 |---|------|------|
 | G1.1 | 建目标骨架：`src/backends/pi/`、`src/config/runtime-spec.ts`、`src/cli/`、`src/env/actions.ts` | `git mv` 后 import 全部可解析 |
-| G1.2 | 机械迁移：`legacy/imports.ts` → `backends/pi/index.ts`；`legacy/context.ts` → `backends/pi/compat.ts`；`backends/pi.ts` → `backends/pi/backend.ts`；`legacy-config/spec.ts` → `config/runtime-spec.ts`；agents/context/subagents/gate/tools/observation/prompt/models/telemetry/flows 收进 `backends/pi/`；`actions/adapter.ts` → `env/actions.ts`；serve/replay/compare/matrix 收进 `cli/`；`config/legacyCompat.ts` → `config/compat.ts` | import 重写后 `npm run build` 通过 |
+| G1.2 | 机械迁移：`legacy/imports.ts` → `backends/pi/index.ts`；`legacy/context.ts` → `backends/pi/compat.ts`；`backends/pi.ts` → `backends/pi/backend.ts`；`legacy-config/spec.ts` → `config/runtime-spec.ts`；agents/context/subagents/gate/tools/observation/prompt/models/telemetry/flows 收进 `backends/pi/`；`actions/adapter.ts` → `env/actions.ts`；serve/compare/matrix 收进 `cli/`；`config/legacyCompat.ts` → `config/compat.ts` | import 重写后 `npm run build` 通过 |
 | G1.3 | 消重复类型：`ObservationEnvelope` 统一到 `engine/types.ts`；`ObservationChannel` 统一到 `config/spec.ts` | `tsc` 无重复定义；单测不变 |
 | G1.4 | 环境层归位：`HttpToolExecutor` 移入 `env/http.ts`，`ToolExecutor` 接口留在 pi 侧 | 环境层/运行时 import 无环 |
-| G1.5 | 同步收尾：更新 `scripts/legacy-manifest.json`、`sync-legacy.mjs`、drift/单测 import；删除根目录 `tmp-dump-spec.ts`；更新 DESIGN-v2.md §6 / README / PLAN | `npm test` + `npm run build` 全绿；mock smoke（mea-demo / stateact-demo）通过 |
+| G1.5 | 同步收尾：更新 `scripts/legacy-manifest.json`、`sync-legacy.mjs`、drift/单测 import；删除根目录 `tmp-dump-spec.ts`；更新 docs/DESIGN-v2.md §6 / README / PLAN | `npm test` + `npm run build` 全绿；mock smoke（mea-demo / stateact-demo）通过 |
 | G1.6 | 验收：`src/legacy/`、`src/legacy-config/` 消失；`git grep legacy` 只剩 v1 YAML 兼容语义 | 测试数量不回退 |
 
 ### G2 MEA 补齐并实跑（后做）
@@ -127,7 +127,7 @@ parametrix 集群实验；跑通后在 Phase F4 把集群增量收进 v2，换�
 
 ## 当前状态
 
-- [x] P0 骨架（spec / legacy / orchestrator / runtime / mock / debug / replay）
+- [x] P0 骨架（spec / legacy / orchestrator / runtime / mock / debug）
 - [x] A1 导入通道（file: 依赖 + src/backends/pi/index.ts 唯一出口，运行时与类型均验证）
 - [x] A2 PiBackend（interior_loop / terminal_tools / plan_tool / refresh_state / read_only /
       delegations 旋钮；fake client 11 个单测）
@@ -136,7 +136,7 @@ parametrix 集群实验；跑通后在 Phase F4 把集群增量收进 v2，换�
 - [x] B1 环境层抽象（src/env/types.ts + HttpEnvironment，复用旧 HttpToolExecutor）
 - [x] B2 read_only 双闸（PiBackend 执行层 + HttpEnvironment 环境层；写工具集合统一）
 - [x] B3 serve 命令（JSONL bridge，复用旧 BridgeRequest/BridgeResponse；roundLimit+resume）
-- [x] B4 step 驱动冒烟（3 个 predict 状态跨 step 落盘，replay 可复现；37 单测通过）
+- [x] B4 step 驱动冒烟（3 个 predict 状态跨 step 落盘；37 单测通过）
 - [ ] C1–C3 复现闭环（task 004 m3/stateact 正在实跑对齐中）
 - [x] D1 manager_decision driver（mock 单测覆盖 execute→executor→auditor→state_update）
 - [ ] D2 IntegrityMonitor（环境侧 snapshot/diff，挂 tool server；Runtime.checkIntegrity 当前为占位）
@@ -145,3 +145,10 @@ parametrix 集群实验；跑通后在 Phase F4 把集群增量收进 v2，换�
       `piosworld compare` 支持父目录枚举；`piosworld matrix` 展开并顺序执行 run_v2.py
 - [x] E1–E6 单仓自包含迁移：配置树并入、OSWorld-V2 submodule（pin v2026.06.24）、
       `.env.example`、`scripts/setup.sh`、`run-smoke.sh`、去掉 v1 硬编码
+- [x] G1 结构整理（commit 8933adc）：`src/legacy*` 移除、机械迁移与 import 重写、
+      ObservationEnvelope/ObservationChannel 去重、HttpToolExecutor 归位 env/http.ts；
+      `npm run build` + 69 单测 + mock 冒烟（stateact-demo / mea-demo）通过；
+      另修 `scripts/run-smoke.sh` / `package.json`（dev/bin）的 cli 入口残留
+- [ ] G2 MEA 补齐（未开始）：G2.1 IntegrityMonitor snapshot/diff（checkIntegrity 仍为占位）、
+      G2.2 max_seconds 超时接线（spec 已定义，PiBackend 未接 AbortController）、
+      G2.3 GUI 只读审计工具集、G2.4 mea.yaml 关闭 executor_report 注入、G2.5 MEA 实跑

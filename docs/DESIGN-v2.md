@@ -1,6 +1,6 @@
 # pi-osworld v2 设计草案（可调试的 harness 组合框架）
 
-> 状态：草案 v0.2（评估版，未落代码）
+> 状态：设计基线 v0.3（实现已落地，目录结构见 §6；当前进度以 docs/PLAN.md 为准）
 > 修订说明：v0.1 把论文功能按模块搬进代码（flows/mea.ts、roles/manager.ts），
 > 方向错误。v0.2 改为 **组合优先（composition-first）**：引擎通用，
 > 论文（LongHorizon-Harness 的 MEA）只是 YAML 里的一份组合，不是代码模块。
@@ -40,7 +40,7 @@ YAML（HarnessSpec）
   └── 每个环节发结构化事件给调试器
         │
         ▼
-调试设施（debug / replay / dashboard / mock）
+调试设施（debug / dashboard / mock）
 ```
 
 关键点：**解释器只有一份**。m3-single、stateact-minimal、MEA 的差异全部在 YAML：
@@ -329,7 +329,7 @@ type Driver =
 pi-osworld-v2/
 ├── package.json
 ├── src/
-│   ├── cli/                      # 命令层：index（run/debug）/ serve / replay / compare / matrix
+│   ├── cli/                      # 命令层：index（run/debug）/ serve / compare / matrix
 │   ├── config/
 │   │   ├── spec.ts               # HarnessSpec 全量 schema（zod）
 │   │   ├── runtime-spec.ts       # Pi 运行时配置类型（原 legacy-config/spec.ts）
@@ -376,7 +376,7 @@ pi-osworld-v2/
 
 与 v0.1 的差异：**删掉** `flows/mea.ts`、`roles/manager|executor|auditor.ts`、
 `registry/topologies.ts`（这些是把论文搬进来）；**新增** `engine/`（通用解释器）、
-`presets/`（YAML 组合）、`debug/replay` 设施。
+`presets/`（YAML 组合）、`debug` 设施。
 
 ## 7. 与 LHH（论文仓库）的关系
 
@@ -390,6 +390,10 @@ pi-osworld-v2/
 
 ## 8. 演进路线
 
+> 落地进度：P0–P2 已实现（对应 PLAN Phase A–E），调试设施、matrix/compare 与单仓自包含
+> 迁移已完成；当前在 Phase G：结构整理收尾 + 补 MEA 原语（IntegrityMonitor / deadline /
+> GUI 审计），进度与验收见 docs/PLAN.md。
+
 - **P0（组合地基）**
   1. HarnessSpec schema（zod）+ extends/覆盖 + presets
   2. 通用 orchestrator（round-loop 解释器）+ driver 原语
@@ -402,7 +406,6 @@ pi-osworld-v2/
   8. `presets/mea.yaml` 冒烟（与 stateact/m3 行为回归）
 - **P2（实验效率）**
   9. matrix / compare / manifest / trajectory / result 落盘
-  10. replay（基于 trace 确定性重放）
 - **P3（体验）**
   11. doctor、路径配置化（.env）、安装脚本、任务级并行、dashboard
 
@@ -681,7 +684,7 @@ function defaultReceives(role: RoleSpec): Receives {
 }
 ```
 
-### 10.5 调试器接口（debug / replay）
+### 10.5 调试器接口（debug）
 
 ```ts
 // src/engine/debugger.ts
@@ -700,11 +703,6 @@ class CliDebugger implements Debugger {
   // 每步打印：当前 round、contract 摘要、各角色输入/工具调用/输出、状态 diff
 }
 
-class ReplayDebugger implements Debugger {
-  // 数据源：runs/<id>/events.jsonl + llm_traces.jsonl（不重跑模型）
-  // 前提：事件必须携带真实 episodeId（现状 Python 侧传 "unknown"，需修复——
-  // 见 bridge reset 调用，否则多任务 trace 无法关联）
-}
 ```
 
 ### 10.6 P0 验收标准
@@ -715,4 +713,3 @@ class ReplayDebugger implements Debugger {
    contract / executor_report / audit_report / task_state 产物齐全且人类可读。
 3. `debug` CLI 能在 mock 运行中暂停、`inspect task_state`、`mutate` 后继续，
    干预动作写入 `interventions.jsonl`。
-4. `replay` 能从一次 mock 运行的 trace 无模型重放，复现相同决策序列。

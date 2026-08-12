@@ -18,7 +18,6 @@ import {
   MemoryTaskStateStore,
 } from "../engine/taskState.js";
 import { runServe } from "./serve.js";
-import { formatReplay, loadEvents, summarizeRounds } from "./replay.js";
 import {
   formatCompare,
   loadRunCompare,
@@ -32,7 +31,7 @@ import {
 } from "./matrix.js";
 
 // ---------------------------------------------------------------------------
-// pi-osworld v2 CLI：run / serve / debug / replay
+// pi-osworld v2 CLI：run / serve / debug / compare / matrix
 // ---------------------------------------------------------------------------
 
 function usage(): void {
@@ -44,7 +43,6 @@ usage:
   piosworld serve --config <yaml> [--root <dir>] [--result-dir <dir>]
                   [--backend pi|mock] [--mock-script <yaml>]   # JSONL bridge（OSWorld step 驱动）
   piosworld debug <run-dir>
-  piosworld replay <run-dir>
   piosworld compare <run-dir> [<run-dir> ...]
   piosworld matrix --matrix <matrix.yaml> [--dry-run]
                   [--python <py>] [--config-root <dir>] [--result-dir <dir>]
@@ -91,7 +89,7 @@ function parseArgs(argv: string[]): CliArgs {
     providerName: "docker",
   };
   const rest = argv.slice(1);
-  if (args.command === "debug" || args.command === "replay") {
+  if (args.command === "debug") {
     args.config = rest[0] ?? "";
     return args;
   }
@@ -249,11 +247,6 @@ async function cmdDebug(runDir: string): Promise<void> {
   }
 }
 
-async function cmdReplay(runDir: string): Promise<void> {
-  const events = loadEvents(runDir);
-  process.stdout.write(`${formatReplay(summarizeRounds(events))}\n`);
-}
-
 async function cmdCompare(runDirs: string[]): Promise<void> {
   if (runDirs.length === 0) {
     usage();
@@ -316,8 +309,6 @@ async function main(): Promise<void> {
     });
   } else if (args.command === "debug") {
     await cmdDebug(args.config);
-  } else if (args.command === "replay") {
-    await cmdReplay(args.config);
   } else if (args.command === "compare") {
     await cmdCompare(args.runDirs);
   } else if (args.command === "matrix") {

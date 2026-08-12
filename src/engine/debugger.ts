@@ -23,7 +23,7 @@ export interface Debugger {
   mutate(path: string, value: unknown): Promise<void>;
 }
 
-/** 记录型调试器：收集全部事件，供测试与 replay。 */
+/** 记录型调试器：收集全部事件，供测试与审计。 */
 export class RecordingDebugger implements Debugger {
   readonly events: DebugEvent[] = [];
   readonly interventions: InterventionEntry[] = [];
